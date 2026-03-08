@@ -1,9 +1,83 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
+import '../utils/constants.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  String _currentVersion = '1.0.8';
+  String? _latestVersion;
+  bool _checking = false;
+
+  Future<void> _checkUpdate() async {
+    if (_checking) return;
+    setState(() => _checking = true);
+
+    try {
+      final response = await http.get(Uri.parse('${AppConstants.apiBaseUrl}/api/app/version'));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        setState(() => _latestVersion = data['version']);
+
+        if (!mounted) return;
+
+        if (data['version'] != _currentVersion) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('发现新版本'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('当前版本: v$_currentVersion'),
+                  Text('最新版本: v${data['version']}'),
+                  if (data['releaseNotes'] != null) ...[
+                    const SizedBox(height: 12),
+                    const Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(data['releaseNotes']),
+                  ],
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('稍后再说'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    launchUrl(Uri.parse(data['downloadUrl']));
+                  },
+                  child: const Text('立即更新'),
+                ),
+              ],
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已是最新版本 ✓'), backgroundColor: Colors.green),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('检查失败: $e'), backgroundColor: Colors.red),
+      );
+    } finally {
+      setState(() => _checking = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,9 +159,16 @@ class SettingsScreen extends StatelessWidget {
             child: Column(
               children: [
                 _SettingsTile(
+                  icon: Icons.system_update,
+                  title: '检查更新',
+                  subtitle: _checking ? '检查中...' : 'v$_currentVersion',
+                  onTap: _checkUpdate,
+                ),
+                const Divider(height: 1, indent: 52),
+                _SettingsTile(
                   icon: Icons.info_outline,
                   title: '关于',
-                  subtitle: '龙虾营地 v1.0.0',
+                  subtitle: '龙虾营地 v$_currentVersion',
                   onTap: () {},
                 ),
                 const Divider(height: 1, indent: 52),
