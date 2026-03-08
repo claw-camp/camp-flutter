@@ -5,7 +5,7 @@ import '../models/message.dart';
 import 'auth_service.dart';
 
 class ApiService {
-  static const _baseUrl = 'https://api.clawcamp.chat';
+  static const _baseUrl = 'http://119.91.123.2';
   final AuthService _authService;
 
   ApiService(this._authService);

@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 
 class AuthService extends ChangeNotifier {
-  static const _baseUrl = 'https://api.clawcamp.chat';
+  static const _baseUrl = 'http://119.91.123.2';
   static const _campKeyKey = 'camp_key';
   static const _tokenKey = 'auth_token';
 
