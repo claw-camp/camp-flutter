@@ -15,7 +15,7 @@ class MessageBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isUser = message.role == MessageRole.user;
+    final isUser = message.isFromMe;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),

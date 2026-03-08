@@ -1,35 +1,37 @@
 class Conversation {
-  final String id;
-  final String botId;
-  final String botName;
-  final String? botAvatar;
+  final int id;
+  final String conversationId;
+  final String type;
+  final String name;
+  final String? avatar;
+  final int unreadCount;
   final String? lastMessage;
   final DateTime? lastMessageAt;
-  final int unreadCount;
+  final String? botId;
 
   Conversation({
     required this.id,
-    required this.botId,
-    required this.botName,
-    this.botAvatar,
+    required this.conversationId,
+    required this.type,
+    required this.name,
+    this.avatar,
+    this.unreadCount = 0,
     this.lastMessage,
     this.lastMessageAt,
-    this.unreadCount = 0,
+    this.botId,
   });
 
-  factory Conversation.fromJson(Map<String, dynamic> json) {
-    return Conversation(
-      id: json['id'] ?? '',
-      botId: json['botId'] ?? '',
-      botName: json['botName'] ?? json['bot']?['name'] ?? 'Agent',
-      botAvatar: json['botAvatar'] ?? json['bot']?['avatar'],
-      lastMessage: json['lastMessage'],
-      lastMessageAt: json['lastMessageAt'] != null
-          ? DateTime.tryParse(json['lastMessageAt'])
-          : json['updatedAt'] != null
-              ? DateTime.tryParse(json['updatedAt'])
-              : null,
-      unreadCount: json['unreadCount'] ?? 0,
-    );
-  }
+  factory Conversation.fromJson(Map<String, dynamic> j) => Conversation(
+    id: j['id'],
+    conversationId: j['conversation_id'],
+    type: j['type'] ?? 'bot',
+    name: j['name'] ?? '未命名',
+    avatar: j['avatar'],
+    unreadCount: j['unread_count'] ?? 0,
+    lastMessage: j['last_message'],
+    lastMessageAt: j['last_message_at'] != null
+        ? DateTime.tryParse(j['last_message_at'])
+        : null,
+    botId: j['bot_id'],
+  );
 }

@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import 'api_service.dart';
@@ -7,146 +7,107 @@ import 'auth_service.dart';
 import 'websocket_service.dart';
 
 class ChatService extends ChangeNotifier {
-  final AuthService _authService;
-  late final ApiService _apiService;
-  final WebSocketService _wsService = WebSocketService();
+  final AuthService _auth;
+  ApiService? _api;
+  WebSocketService? _ws;
 
-  List<Conversation> _conversations = [];
-  final Map<String, List<Message>> _messages = {};
-  bool _isLoadingConversations = false;
-  final Map<String, bool> _isLoadingMessages = {};
+  List<Conversation> conversations = [];
+  Map<String, List<Message>> messagesMap = {};
+  bool loading = false;
   StreamSubscription? _wsSub;
 
-  List<Conversation> get conversations => _conversations;
-  bool get isLoadingConversations => _isLoadingConversations;
-
-  ChatService(this._authService) {
-    _apiService = ApiService(_authService);
-    _listenAuth();
-  }
-
-  void _listenAuth() {
-    _authService.addListener(_onAuthChanged);
-    if (_authService.isLoggedIn) {
-      _connectWs();
-    }
+  ChatService(this._auth) {
+    if (_auth.campKey != null) _init();
+    _auth.addListener(_onAuthChanged);
   }
 
   void _onAuthChanged() {
-    if (_authService.isLoggedIn) {
-      _connectWs();
-      loadConversations();
-    } else {
-      _wsService.disconnect();
-      _conversations = [];
-      _messages.clear();
-      _wsSub?.cancel();
-      notifyListeners();
-    }
+    if (_auth.campKey != null) _init();
   }
 
-  void _connectWs() {
-    _wsSub?.cancel();
-    final token = _authService.token;
-    if (token == null) return;
+  void _init() {
+    _api = ApiService(_auth.campKey!);
+    _ws = WebSocketService(_auth.campKey!);
+    _ws!.connect();
+    _wsSub = _ws!.stream.listen(_handleWsMessage);
+    loadConversations();
+  }
 
-    _wsService.connect(token);
-    _wsSub = _wsService.messageStream.listen((msg) {
-      final msgs = _messages[msg.conversationId];
-      if (msgs != null) {
-        msgs.add(msg);
-      }
-      // Update conversation's last message
-      final idx = _conversations.indexWhere((c) => c.id == msg.conversationId);
+  void _handleWsMessage(Map<String, dynamic> msg) {
+    final type = msg['type'];
+    if (type == 'chat-message' || type == 'new-message') {
+      final payload = msg['payload'] as Map<String, dynamic>?;
+      if (payload == null) return;
+      final convId = payload['conversationId'] as String?;
+      if (convId == null) return;
+      final newMsg = Message(
+        messageId: payload['messageId'] ?? payload['id']?.toString() ?? '',
+        conversationId: convId,
+        senderId: payload['senderId'] ?? '',
+        senderType: payload['senderType'] ?? 'bot',
+        content: payload['content'] ?? '',
+        createdAt: DateTime.now(),
+      );
+      messagesMap[convId] = [...(messagesMap[convId] ?? []), newMsg];
+      // 更新会话最后消息
+      final idx = conversations.indexWhere((c) => c.conversationId == convId);
       if (idx >= 0) {
-        final old = _conversations[idx];
-        _conversations[idx] = Conversation(
+        final old = conversations[idx];
+        conversations[idx] = Conversation(
           id: old.id,
-          botId: old.botId,
-          botName: old.botName,
-          botAvatar: old.botAvatar,
-          lastMessage: msg.content,
-          lastMessageAt: msg.createdAt,
+          conversationId: old.conversationId,
+          type: old.type,
+          name: old.name,
+          avatar: old.avatar,
           unreadCount: old.unreadCount + 1,
+          lastMessage: newMsg.content,
+          lastMessageAt: DateTime.now(),
+          botId: old.botId,
         );
-        // Move to top
-        final updated = _conversations.removeAt(idx);
-        _conversations.insert(0, updated);
       }
       notifyListeners();
-    });
+    }
   }
 
   Future<void> loadConversations() async {
-    _isLoadingConversations = true;
+    if (_api == null) return;
+    loading = true;
     notifyListeners();
-
     try {
-      _conversations = await _apiService.getConversations();
-    } catch (e) {
-      debugPrint('加载会话失败: $e');
-    }
-
-    _isLoadingConversations = false;
+      conversations = await _api!.getConversations();
+    } catch (_) {}
+    loading = false;
     notifyListeners();
   }
 
-  List<Message> getMessages(String conversationId) {
-    return _messages[conversationId] ?? [];
-  }
-
-  bool isLoadingMessages(String conversationId) {
-    return _isLoadingMessages[conversationId] ?? false;
-  }
-
-  Future<void> loadMessages(String conversationId) async {
-    _isLoadingMessages[conversationId] = true;
+  Future<List<Message>> loadMessages(String conversationId) async {
+    if (_api == null) return [];
+    final msgs = await _api!.getMessages(conversationId);
+    messagesMap[conversationId] = msgs;
     notifyListeners();
-
-    try {
-      _messages[conversationId] =
-          await _apiService.getMessages(conversationId);
-    } catch (e) {
-      debugPrint('加载消息失败: $e');
-    }
-
-    _isLoadingMessages[conversationId] = false;
-    notifyListeners();
+    return msgs;
   }
 
-  Future<void> sendMessage({
-    required String botId,
-    required String conversationId,
-    required String content,
-  }) async {
-    // Optimistic add
-    final tempMsg = Message(
-      id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+  Future<void> sendMessage(String conversationId, String content, {String? botId}) async {
+    if (_api == null) return;
+    // 先乐观插入
+    final tmp = Message(
+      messageId: 'tmp_${DateTime.now().millisecondsSinceEpoch}',
       conversationId: conversationId,
-      role: MessageRole.user,
+      senderId: 'me',
+      senderType: 'user',
       content: content,
       createdAt: DateTime.now(),
     );
-    _messages.putIfAbsent(conversationId, () => []);
-    _messages[conversationId]!.add(tempMsg);
+    messagesMap[conversationId] = [...(messagesMap[conversationId] ?? []), tmp];
     notifyListeners();
-
-    try {
-      await _apiService.sendMessage(
-        botId: botId,
-        conversationId: conversationId,
-        content: content,
-      );
-    } catch (e) {
-      debugPrint('发送失败: $e');
-    }
+    await _api!.sendMessage(conversationId: conversationId, content: content, botId: botId);
   }
 
   @override
   void dispose() {
-    _authService.removeListener(_onAuthChanged);
     _wsSub?.cancel();
-    _wsService.dispose();
+    _ws?.disconnect();
     super.dispose();
   }
 }

@@ -26,7 +26,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
     final chatService = context.watch<ChatService>();
     final conversations = chatService.conversations.where((c) {
       if (_searchQuery.isEmpty) return true;
-      return c.botName.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+      return c.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
           (c.lastMessage?.toLowerCase().contains(_searchQuery.toLowerCase()) ??
               false);
     }).toList();
@@ -77,7 +77,7 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
           ),
           // Conversation list
           Expanded(
-            child: chatService.isLoadingConversations && conversations.isEmpty
+            child: chatService.loading && conversations.isEmpty
                 ? const Center(
                     child: CircularProgressIndicator(
                       color: Color(0xFFE53935),

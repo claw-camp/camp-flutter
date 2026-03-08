@@ -1,73 +1,53 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
-import '../models/message.dart';
 
 class WebSocketService {
   static const _wsUrl = 'ws://119.91.123.2:8889/ws';
 
   WebSocketChannel? _channel;
-  final _messageController = StreamController<Message>.broadcast();
-  Timer? _heartbeatTimer;
-  String? _token;
+  StreamController<Map<String, dynamic>>? _controller;
+  final String campKey;
+  Timer? _heartbeat;
 
-  Stream<Message> get messageStream => _messageController.stream;
+  WebSocketService(this.campKey);
 
-  void connect(String token) {
-    _token = token;
-    _doConnect();
-  }
+  Stream<Map<String, dynamic>> get stream => _controller!.stream;
 
-  void _doConnect() {
-    if (_token == null) return;
+  void connect() {
+    _controller = StreamController<Map<String, dynamic>>.broadcast();
+    _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
 
-    try {
-      _channel = WebSocketChannel.connect(
-        Uri.parse('$_wsUrl?token=$_token'),
-      );
+    // 发送 subscribe
+    _channel!.sink.add(jsonEncode({
+      'type': 'subscribe',
+      'campKey': campKey,
+    }));
 
-      _channel!.stream.listen(
-        (data) {
-          try {
-            final json = jsonDecode(data);
-            if (json['type'] == 'message' || json['type'] == 'chat') {
-              final msgData = json['data'] ?? json['message'] ?? json;
-              _messageController.add(Message.fromJson(msgData));
-            }
-          } catch (_) {}
-        },
-        onError: (_) => _reconnect(),
-        onDone: () => _reconnect(),
-      );
+    _channel!.stream.listen(
+      (data) {
+        try {
+          final msg = jsonDecode(data.toString());
+          _controller!.add(msg);
+        } catch (_) {}
+      },
+      onError: (_) => _reconnect(),
+      onDone: () => _reconnect(),
+    );
 
-      _heartbeatTimer?.cancel();
-      _heartbeatTimer = Timer.periodic(
-        const Duration(seconds: 30),
-        (_) {
-          try {
-            _channel?.sink.add(jsonEncode({'type': 'ping'}));
-          } catch (_) {}
-        },
-      );
-    } catch (_) {
-      _reconnect();
-    }
+    // 心跳
+    _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
+      _channel?.sink.add(jsonEncode({'type': 'ping'}));
+    });
   }
 
   void _reconnect() {
-    _heartbeatTimer?.cancel();
-    Future.delayed(const Duration(seconds: 3), _doConnect);
+    Future.delayed(const Duration(seconds: 3), connect);
   }
 
   void disconnect() {
-    _heartbeatTimer?.cancel();
+    _heartbeat?.cancel();
     _channel?.sink.close();
-    _channel = null;
-    _token = null;
-  }
-
-  void dispose() {
-    disconnect();
-    _messageController.close();
+    _controller?.close();
   }
 }

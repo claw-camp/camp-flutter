@@ -96,13 +96,13 @@ class OverviewScreen extends StatelessWidget {
                         CircleAvatar(
                           radius: 20,
                           backgroundColor: const Color(0xFFE53935),
-                          backgroundImage: c.botAvatar != null
-                              ? NetworkImage(c.botAvatar!)
+                          backgroundImage: c.avatar != null
+                              ? NetworkImage(c.avatar!)
                               : null,
-                          child: c.botAvatar == null
+                          child: c.avatar == null
                               ? Text(
-                                  c.botName.isNotEmpty
-                                      ? c.botName[0].toUpperCase()
+                                  c.name.isNotEmpty
+                                      ? c.name[0].toUpperCase()
                                       : 'A',
                                   style: const TextStyle(
                                     color: Colors.white,
@@ -117,7 +117,7 @@ class OverviewScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                c.botName,
+                                c.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 15,

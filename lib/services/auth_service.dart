@@ -1,80 +1,66 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user.dart';
 
 class AuthService extends ChangeNotifier {
   static const _baseUrl = 'http://119.91.123.2';
-  static const _campKeyKey = 'camp_key';
-  static const _tokenKey = 'auth_token';
+  static const _keyUsername = 'camp_username';
+  static const _keyCampKey = 'camp_key';
 
-  String? _token;
-  User? _user;
-  bool _isLoading = false;
+  String? _campKey;
+  String? _username;
+  bool _initialized = false;
 
-  String? get token => _token;
-  User? get user => _user;
-  bool get isLoggedIn => _token != null;
-  bool get isLoading => _isLoading;
+  String? get campKey => _campKey;
+  String? get username => _username;
+  bool get isLoggedIn => _campKey != null;
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString(_tokenKey);
-    if (_token != null) {
-      notifyListeners();
-    }
+    _campKey = prefs.getString(_keyCampKey);
+    _username = prefs.getString(_keyUsername);
+    _initialized = true;
+    notifyListeners();
   }
 
-  Future<String?> login(String campKey) async {
-    _isLoading = true;
+  // 用 campKey 直接登录（跳过 username/password）
+  Future<void> loginWithCampKey(String campKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyCampKey, campKey);
+    await prefs.setString(_keyUsername, 'user');
+    _campKey = campKey;
+    _username = 'user';
     notifyListeners();
+  }
 
-    try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/api/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'campKey': campKey}),
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        _token = data['token'];
-        if (data['user'] != null) {
-          _user = User.fromJson(data['user']);
-        }
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_tokenKey, _token!);
-        await prefs.setString(_campKeyKey, campKey);
-
-        _isLoading = false;
-        notifyListeners();
-        return null;
-      } else {
-        _isLoading = false;
-        notifyListeners();
-        final body = jsonDecode(response.body);
-        return body['message'] ?? '登录失败';
-      }
-    } catch (e) {
-      _isLoading = false;
+  // 用 username + password 登录
+  Future<Map<String, dynamic>> loginWithPassword(String username, String password) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'username': username, 'password': password}),
+    );
+    final data = jsonDecode(res.body);
+    if (res.statusCode == 200 && data['success'] == true) {
+      final key = data['user']['campKey'] as String;
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keyCampKey, key);
+      await prefs.setString(_keyUsername, username);
+      _campKey = key;
+      _username = username;
       notifyListeners();
-      return '网络错误: $e';
+      return {'success': true};
     }
+    return {'success': false, 'error': data['error'] ?? '登录失败'};
   }
 
   Future<void> logout() async {
-    _token = null;
-    _user = null;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-    await prefs.remove(_campKeyKey);
+    await prefs.remove(_keyCampKey);
+    await prefs.remove(_keyUsername);
+    _campKey = null;
+    _username = null;
     notifyListeners();
   }
-
-  Map<String, String> get authHeaders => {
-        'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': 'Bearer $_token',
-      };
 }

@@ -22,7 +22,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatService>().loadMessages(widget.conversation.id);
+      context.read<ChatService>().loadMessages(widget.conversation.conversationId);
     });
   }
 
@@ -31,11 +31,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
     _controller.clear();
 
-    context.read<ChatService>().sendMessage(
-          botId: widget.conversation.botId,
-          conversationId: widget.conversation.id,
-          content: text,
-        );
+    context.read<ChatService>().sendMessage(widget.conversation.conversationId, text, botId: widget.conversation.botId);
 
     Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
   }
@@ -60,8 +56,8 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final chatService = context.watch<ChatService>();
-    final messages = chatService.getMessages(widget.conversation.id);
-    final isLoading = chatService.isLoadingMessages(widget.conversation.id);
+    final messages = chatService.messagesMap[widget.conversation.conversationId] ?? [];
+    final isLoading = chatService.loading;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
@@ -82,13 +78,13 @@ class _ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               radius: 16,
               backgroundColor: const Color(0xFFE53935),
-              backgroundImage: widget.conversation.botAvatar != null
-                  ? NetworkImage(widget.conversation.botAvatar!)
+              backgroundImage: widget.conversation.avatar != null
+                  ? NetworkImage(widget.conversation.avatar!)
                   : null,
-              child: widget.conversation.botAvatar == null
+              child: widget.conversation.avatar == null
                   ? Text(
-                      widget.conversation.botName.isNotEmpty
-                          ? widget.conversation.botName[0].toUpperCase()
+                      widget.conversation.name.isNotEmpty
+                          ? widget.conversation.name[0].toUpperCase()
                           : 'A',
                       style: const TextStyle(
                         color: Colors.white,
@@ -100,7 +96,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             const SizedBox(width: 8),
             Text(
-              widget.conversation.botName,
+              widget.conversation.name,
               style: const TextStyle(
                 color: Color(0xFF333333),
                 fontSize: 17,
@@ -139,8 +135,8 @@ class _ChatScreenState extends State<ChatScreen> {
                         itemBuilder: (context, i) {
                           return MessageBubble(
                             message: messages[i],
-                            botName: widget.conversation.botName,
-                            botAvatar: widget.conversation.botAvatar,
+                            botName: widget.conversation.name,
+                            botAvatar: widget.conversation.avatar,
                           );
                         },
                       ),

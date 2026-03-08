@@ -39,8 +39,8 @@ class SettingsScreen extends StatelessWidget {
                   radius: 28,
                   backgroundColor: const Color(0xFFE53935),
                   child: Text(
-                    auth.user?.name.isNotEmpty == true
-                        ? auth.user!.name[0].toUpperCase()
+                    auth.username != null
+                        ? (auth.username ?? "U")[0].toUpperCase()
                         : 'U',
                     style: const TextStyle(
                       color: Colors.white,
@@ -55,7 +55,7 @@ class SettingsScreen extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        auth.user?.name ?? '营地用户',
+                        auth.username ?? "营地用户",
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,

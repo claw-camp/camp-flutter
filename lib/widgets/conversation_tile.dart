@@ -39,13 +39,13 @@ class ConversationTile extends StatelessWidget {
         leading: CircleAvatar(
           radius: 24,
           backgroundColor: const Color(0xFFE53935),
-          backgroundImage: conversation.botAvatar != null
-              ? NetworkImage(conversation.botAvatar!)
+          backgroundImage: conversation.avatar != null
+              ? NetworkImage(conversation.avatar!)
               : null,
-          child: conversation.botAvatar == null
+          child: conversation.avatar == null
               ? Text(
-                  conversation.botName.isNotEmpty
-                      ? conversation.botName[0].toUpperCase()
+                  conversation.name.isNotEmpty
+                      ? conversation.name[0].toUpperCase()
                       : 'A',
                   style: const TextStyle(
                     color: Colors.white,
@@ -59,7 +59,7 @@ class ConversationTile extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                conversation.botName,
+                conversation.name,
                 style: const TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 16,
