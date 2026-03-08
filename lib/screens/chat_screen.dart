@@ -46,27 +46,20 @@ class _ChatScreenState extends State<ChatScreen> {
   void _handleSlashCommand(String cmd) {
     final parts = cmd.split(' ');
     final command = parts[0].toLowerCase();
-    final args = parts.skip(1).join(' ');
 
     switch (command) {
-      case '/help':
-        _showHelpDialog();
-        break;
       case '/clear':
         context.read<ChatService>().clearMessages(widget.conversation.conversationId);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('聊天记录已清空'), duration: Duration(seconds: 1)),
         );
         break;
-      case '/status':
-        _showAgentStatus();
-        break;
       case '/logout':
         context.read<AuthService>().logout();
         Navigator.of(context).popUntil((route) => route.isFirst);
         break;
       default:
-        // 未知命令，当作普通消息发送
+        // 其他命令（/model, /abort, /help 等）直接发给 Agent
         context.read<ChatService>().sendMessage(widget.conversation.conversationId, cmd, botId: widget.conversation.botId);
     }
   }
