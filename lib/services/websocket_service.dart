@@ -4,7 +4,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import '../models/message.dart';
 
 class WebSocketService {
-  static const _wsUrl = 'wss://camp.aigc.sx.cn/ws';
+  static const _wsUrl = 'wss://api.clawcamp.chat/ws';
 
   WebSocketChannel? _channel;
   final _messageController = StreamController<Message>.broadcast();
