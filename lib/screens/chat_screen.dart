@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
 import '../services/chat_service.dart';
+import '../services/auth_service.dart';
 import '../widgets/message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -31,9 +32,93 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty) return;
     _controller.clear();
 
+    // 处理斜杠命令
+    if (text.startsWith('/')) {
+      _handleSlashCommand(text);
+      return;
+    }
+
     context.read<ChatService>().sendMessage(widget.conversation.conversationId, text, botId: widget.conversation.botId);
 
     Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+  }
+
+  void _handleSlashCommand(String cmd) {
+    final parts = cmd.split(' ');
+    final command = parts[0].toLowerCase();
+    final args = parts.skip(1).join(' ');
+
+    switch (command) {
+      case '/help':
+        _showHelpDialog();
+        break;
+      case '/clear':
+        context.read<ChatService>().clearMessages(widget.conversation.conversationId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('聊天记录已清空'), duration: Duration(seconds: 1)),
+        );
+        break;
+      case '/status':
+        _showAgentStatus();
+        break;
+      case '/logout':
+        context.read<AuthService>().logout();
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      default:
+        // 未知命令，当作普通消息发送
+        context.read<ChatService>().sendMessage(widget.conversation.conversationId, cmd, botId: widget.conversation.botId);
+    }
+  }
+
+  void _showHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('🦞 斜杠命令'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _CommandHelp(cmd: '/help', desc: '显示帮助'),
+            SizedBox(height: 8),
+            _CommandHelp(cmd: '/clear', desc: '清空当前聊天记录'),
+            SizedBox(height: 8),
+            _CommandHelp(cmd: '/status', desc: '查看 Agent 状态'),
+            SizedBox(height: 8),
+            _CommandHelp(cmd: '/logout', desc: '退出登录'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
+  }
+
+  void _showAgentStatus() async {
+    final status = await context.read<ChatService>().getAgentStatus(widget.conversation.botId);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('🤖 Agent 状态'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Bot ID: ${widget.conversation.botId}'),
+            const SizedBox(height: 8),
+            Text('状态: ${status['status'] ?? '未知'}'),
+            const SizedBox(height: 8),
+            Text('最后在线: ${status['lastSeen'] ?? '-'}'),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
+        ],
+      ),
+    );
   }
 
   void _scrollToBottom() {
@@ -197,6 +282,23 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CommandHelp extends StatelessWidget {
+  final String cmd;
+  final String desc;
+  const _CommandHelp({required this.cmd, required this.desc});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(cmd, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE53935))),
+        const SizedBox(width: 12),
+        Text(desc, style: const TextStyle(color: Colors.black87)),
+      ],
     );
   }
 }

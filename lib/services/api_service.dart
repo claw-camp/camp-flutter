@@ -58,4 +58,15 @@ class ApiService {
     );
     return jsonDecode(res.body);
   }
+
+  Future<List<Map<String, dynamic>>> getAgents() async {
+    final res = await http.get(
+      Uri.parse('$_baseUrl/api/agents'),
+    );
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      return List<Map<String, dynamic>>.from(data['agents'] ?? []);
+    }
+    return [];
+  }
 }

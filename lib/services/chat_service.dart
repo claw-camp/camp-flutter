@@ -108,6 +108,31 @@ class ChatService extends ChangeNotifier {
     await _api!.sendMessage(conversationId: conversationId, content: content, botId: botId);
   }
 
+  void clearMessages(String conversationId) {
+    messagesMap[conversationId] = [];
+    notifyListeners();
+  }
+
+  Future<Map<String, dynamic>> getAgentStatus(String? botId) async {
+    if (_api == null || botId == null) return {'status': '未知'};
+    try {
+      final agents = await _api!.getAgents();
+      final agent = agents.firstWhere(
+        (a) => a['botId'] == botId || a['id'] == botId,
+        orElse: () => <String, dynamic>{},
+      );
+      final lastSeen = agent['lastSeen'] as int?;
+      return {
+        'status': agent['status'] ?? '离线',
+        'lastSeen': lastSeen != null
+            ? DateTime.fromMillisecondsSinceEpoch(lastSeen).toString().substring(0, 19)
+            : '-',
+      };
+    } catch (_) {
+      return {'status': '查询失败'};
+    }
+  }
+
   @override
   void dispose() {
     _wsSub?.cancel();
