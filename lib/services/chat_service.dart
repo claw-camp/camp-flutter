@@ -38,13 +38,17 @@ class ChatService extends ChangeNotifier {
     if (type == 'chat-message' || type == 'new-message') {
       final payload = msg['payload'] as Map<String, dynamic>?;
       if (payload == null) return;
-      final convId = payload['conversationId'] as String?;
+      // 兼容 snake_case 和 camelCase
+      final convId = payload['conversationId'] ?? payload['conversation_id'] as String?;
       if (convId == null) return;
+      final senderType = payload['senderType'] ?? payload['sender_type'] ?? 'bot';
+      // 忽略用户自己的消息（已在发送时乐观插入）
+      if (senderType == 'user') return;
       final newMsg = Message(
-        messageId: payload['messageId'] ?? payload['id']?.toString() ?? '',
+        messageId: payload['messageId'] ?? payload['message_id'] ?? payload['id']?.toString() ?? '',
         conversationId: convId,
-        senderId: payload['senderId'] ?? '',
-        senderType: payload['senderType'] ?? 'bot',
+        senderId: payload['senderId'] ?? payload['sender_id'] ?? '',
+        senderType: senderType,
         content: payload['content'] ?? '',
         createdAt: DateTime.now(),
       );
