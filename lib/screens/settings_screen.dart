@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
@@ -155,6 +156,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       if (!mounted) return;
       setState(() => _downloading = false);
+
+      // 检查安装权限（Android 8+）
+      final installStatus = await Permission.requestInstallPackages.status;
+      if (!installStatus.isGranted) {
+        final result = await Permission.requestInstallPackages.request();
+        if (!result.isGranted) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text('需要安装权限，请在设置中允许安装未知应用'),
+                backgroundColor: Colors.orange,
+                action: SnackBarAction(
+                  label: '去设置',
+                  textColor: Colors.white,
+                  onPressed: () => openAppSettings(),
+                ),
+              ),
+            );
+          }
+          return;
+        }
+      }
 
       // 调用系统安装器
       final result = await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
