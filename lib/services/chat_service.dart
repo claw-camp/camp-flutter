@@ -44,12 +44,18 @@ class ChatService extends ChangeNotifier {
       final senderType = payload['senderType'] ?? payload['sender_type'] ?? 'bot';
       // 忽略用户自己的消息（已在发送时乐观插入）
       if (senderType == 'user') return;
+      // 忽略 typing 指示器（payload 里 type='typing' 且无 content）
+      final payloadType = payload['type'] as String?;
+      if (payloadType == 'typing') return;
+      final content = payload['content'] as String? ?? '';
+      // 忽略内容为空的消息（防止 typing/其他非消息事件被误显示）
+      if (content.isEmpty) return;
       final newMsg = Message(
         messageId: payload['messageId'] ?? payload['message_id'] ?? payload['id']?.toString() ?? '',
         conversationId: convId,
         senderId: payload['senderId'] ?? payload['sender_id'] ?? '',
         senderType: senderType,
-        content: payload['content'] ?? '',
+        content: content,
         createdAt: DateTime.now(),
       );
       messagesMap[convId] = [...(messagesMap[convId] ?? []), newMsg];

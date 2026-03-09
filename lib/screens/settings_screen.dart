@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_file/open_file.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
 
@@ -14,68 +17,167 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  String _currentVersion = '1.0.9';
+  String _currentVersion = '';
   String? _latestVersion;
   bool _checking = false;
+  bool _downloading = false;
+  double _downloadProgress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) {
+      setState(() => _currentVersion = info.version);
+    }
+  }
 
   Future<void> _checkUpdate() async {
-    if (_checking) return;
+    if (_checking || _downloading) return;
     setState(() => _checking = true);
 
     try {
-      final response = await http.get(Uri.parse('${AppConstants.apiBaseUrl}/api/app/version'));
+      final response = await http.get(
+        Uri.parse('${AppConstants.apiBaseUrl}/api/app/version'),
+      );
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        setState(() => _latestVersion = data['version']);
+        final latest = data['version'] as String?;
+        setState(() => _latestVersion = latest);
 
         if (!mounted) return;
 
-        if (data['version'] != _currentVersion) {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: const Text('发现新版本'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('当前版本: v$_currentVersion'),
-                  Text('最新版本: v${data['version']}'),
-                  if (data['releaseNotes'] != null) ...[
-                    const SizedBox(height: 12),
-                    const Text('更新内容:', style: TextStyle(fontWeight: FontWeight.bold)),
-                    Text(data['releaseNotes']),
-                  ],
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text('稍后再说'),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    launchUrl(Uri.parse(data['downloadUrl']));
-                  },
-                  child: const Text('立即更新'),
-                ),
-              ],
-            ),
-          );
+        if (latest != null && latest != _currentVersion) {
+          _showUpdateDialog(data);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已是最新版本 ✓'), backgroundColor: Colors.green),
+            const SnackBar(
+              content: Text('已是最新版本 ✓'),
+              backgroundColor: Colors.green,
+            ),
           );
         }
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('检查失败: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('检查失败: $e'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
-      setState(() => _checking = false);
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  void _showUpdateDialog(Map<String, dynamic> data) {
+    final latest = data['version'] as String? ?? '';
+    final notes = data['releaseNotes'] as String?;
+    final downloadUrl = data['downloadUrl'] as String? ??
+        '${AppConstants.apiBaseUrl}/camp-flutter-latest.apk';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('发现新版本 🎉'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('当前版本: v$_currentVersion'),
+            Text('最新版本: v$latest',
+                style: const TextStyle(
+                    color: Color(0xFFE53935), fontWeight: FontWeight.bold)),
+            if (notes != null) ...[
+              const SizedBox(height: 12),
+              const Text('更新内容:',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(notes),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('稍后'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _downloadAndInstall(downloadUrl);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53935),
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('立即更新'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadAndInstall(String downloadUrl) async {
+    setState(() {
+      _downloading = true;
+      _downloadProgress = 0;
+    });
+
+    try {
+      // 获取下载目录
+      final dir = await getApplicationSupportDirectory();
+      final apkDir = Directory('${dir.path}/apk');
+      if (!await apkDir.exists()) await apkDir.create(recursive: true);
+      final apkPath = '${apkDir.path}/update.apk';
+
+      // 流式下载，带进度
+      final request = http.Request('GET', Uri.parse(downloadUrl));
+      final response = await http.Client().send(request);
+      final total = response.contentLength ?? 0;
+      int received = 0;
+
+      final file = File(apkPath);
+      final sink = file.openWrite();
+
+      await response.stream.listen((chunk) {
+        sink.add(chunk);
+        received += chunk.length;
+        if (total > 0 && mounted) {
+          setState(() => _downloadProgress = received / total);
+        }
+      }).asFuture();
+      await sink.close();
+
+      if (!mounted) return;
+      setState(() => _downloading = false);
+
+      // 调用系统安装器
+      final result = await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
+      if (result.type != ResultType.done) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('安装失败: ${result.message}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _downloading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('下载失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -100,7 +202,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // User info card
+          // 用户信息卡片
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -114,7 +216,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   backgroundColor: const Color(0xFFE53935),
                   child: Text(
                     auth.username != null
-                        ? (auth.username ?? "U")[0].toUpperCase()
+                        ? (auth.username ?? 'U')[0].toUpperCase()
                         : 'U',
                     style: const TextStyle(
                       color: Colors.white,
@@ -129,7 +231,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        auth.username ?? "营地用户",
+                        auth.username ?? '营地用户',
                         style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w600,
@@ -150,7 +252,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Settings items
+
+          // 下载进度条
+          if (_downloading)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.downloading,
+                          color: Color(0xFFE53935), size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        '正在下载更新... ${(_downloadProgress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                            fontSize: 13, color: Color(0xFF666666)),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _downloadProgress > 0 ? _downloadProgress : null,
+                      backgroundColor: const Color(0xFFEEEEEE),
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          Color(0xFFE53935)),
+                      minHeight: 6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // 功能列表
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -161,14 +303,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SettingsTile(
                   icon: Icons.system_update,
                   title: '检查更新',
-                  subtitle: _checking ? '检查中...' : 'v$_currentVersion',
+                  subtitle: _checking
+                      ? '检查中...'
+                      : _downloading
+                          ? '下载中...'
+                          : _currentVersion.isNotEmpty
+                              ? 'v$_currentVersion'
+                              : '...',
                   onTap: _checkUpdate,
                 ),
                 const Divider(height: 1, indent: 52),
                 _SettingsTile(
                   icon: Icons.info_outline,
                   title: '关于',
-                  subtitle: '龙虾营地 v$_currentVersion',
+                  subtitle: _currentVersion.isNotEmpty
+                      ? '龙虾营地 v$_currentVersion'
+                      : '龙虾营地',
                   onTap: () {},
                 ),
                 const Divider(height: 1, indent: 52),
@@ -181,7 +331,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          // Logout button
+
+          // 退出登录
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
