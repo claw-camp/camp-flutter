@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/conversation.dart';
-import '../models/message.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/message_bubble.dart';
@@ -18,13 +17,31 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
+  late final ChatService _chatService;
+  Map<String, dynamic>? _agentStatus;
+  bool _loadingStatus = false;
 
   @override
   void initState() {
     super.initState();
+    _chatService = context.read<ChatService>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<ChatService>().loadMessages(widget.conversation.conversationId);
+      _chatService.connectRealtime();
+      _chatService.loadMessages(widget.conversation.conversationId);
+      _loadAgentStatus();
     });
+  }
+
+  Future<void> _loadAgentStatus() async {
+    if (_loadingStatus) return;
+    _loadingStatus = true;
+    final status = await _chatService.getAgentStatus(widget.conversation.botId);
+    if (mounted) {
+      setState(() {
+        _agentStatus = status;
+        _loadingStatus = false;
+      });
+    }
   }
 
   void _send() {
@@ -38,7 +55,11 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    context.read<ChatService>().sendMessage(widget.conversation.conversationId, text, botId: widget.conversation.botId);
+    _chatService.sendMessage(
+      widget.conversation.conversationId,
+      text,
+      botId: widget.conversation.botId,
+    );
 
     Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
   }
@@ -49,9 +70,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
     switch (command) {
       case '/clear':
-        context.read<ChatService>().clearMessages(widget.conversation.conversationId);
+        _chatService.clearMessages(widget.conversation.conversationId);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('聊天记录已清空'), duration: Duration(seconds: 1)),
+          const SnackBar(
+            content: Text('聊天记录已清空'),
+            duration: Duration(seconds: 1),
+          ),
         );
         break;
       case '/logout':
@@ -60,58 +84,12 @@ class _ChatScreenState extends State<ChatScreen> {
         break;
       default:
         // 其他命令（/model, /abort, /help 等）直接发给 Agent
-        context.read<ChatService>().sendMessage(widget.conversation.conversationId, cmd, botId: widget.conversation.botId);
+        _chatService.sendMessage(
+          widget.conversation.conversationId,
+          cmd,
+          botId: widget.conversation.botId,
+        );
     }
-  }
-
-  void _showHelpDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('🦞 斜杠命令'),
-        content: const Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _CommandHelp(cmd: '/help', desc: '显示帮助'),
-            SizedBox(height: 8),
-            _CommandHelp(cmd: '/clear', desc: '清空当前聊天记录'),
-            SizedBox(height: 8),
-            _CommandHelp(cmd: '/status', desc: '查看 Agent 状态'),
-            SizedBox(height: 8),
-            _CommandHelp(cmd: '/logout', desc: '退出登录'),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-        ],
-      ),
-    );
-  }
-
-  void _showAgentStatus() async {
-    final status = await context.read<ChatService>().getAgentStatus(widget.conversation.botId);
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('🤖 Agent 状态'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Bot ID: ${widget.conversation.botId}'),
-            const SizedBox(height: 8),
-            Text('状态: ${status['status'] ?? '未知'}'),
-            const SizedBox(height: 8),
-            Text('最后在线: ${status['lastSeen'] ?? '-'}'),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭')),
-        ],
-      ),
-    );
   }
 
   void _scrollToBottom() {
@@ -126,6 +104,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _chatService.disconnectRealtime();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -134,8 +113,16 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final chatService = context.watch<ChatService>();
-    final messages = chatService.messagesMap[widget.conversation.conversationId] ?? [];
+    final messages =
+        chatService.messagesMap[widget.conversation.conversationId] ?? [];
     final isLoading = chatService.loading;
+    
+    // 获取 Agent 状态
+    final botId = widget.conversation.botId;
+    final cachedStatus = chatService.agentStatus[botId];
+    final status = cachedStatus ?? _agentStatus;
+    final agentOnline = status?['status'] == 'online';
+    final agentModel = status?['model'] as String?;
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
@@ -150,74 +137,134 @@ class _ChatScreenState extends State<ChatScreen> {
           color: const Color(0xFF333333),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+        title: Column(
           children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: const Color(0xFFE53935),
-              backgroundImage: widget.conversation.avatar != null
-                  ? NetworkImage(widget.conversation.avatar!)
-                  : null,
-              child: widget.conversation.avatar == null
-                  ? Text(
-                      widget.conversation.name.isNotEmpty
-                          ? widget.conversation.name[0].toUpperCase()
-                          : 'A',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
-                  : null,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFFE53935),
+                  backgroundImage: widget.conversation.avatar != null
+                      ? NetworkImage(widget.conversation.avatar!)
+                      : null,
+                  child: widget.conversation.avatar == null
+                      ? Text(
+                          widget.conversation.name.isNotEmpty
+                              ? widget.conversation.name[0].toUpperCase()
+                              : 'A',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.conversation.name,
+                  style: const TextStyle(
+                    color: Color(0xFF333333),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // 在线状态指示器
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: agentOnline ? Colors.green : Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Text(
-              widget.conversation.name,
-              style: const TextStyle(
-                color: Color(0xFF333333),
-                fontSize: 17,
-                fontWeight: FontWeight.w600,
+            // 副标题：模型和状态
+            if (agentModel != null || status != null)
+              Text(
+                agentModel ?? (agentOnline ? '在线' : '离线'),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                ),
               ),
-            ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20),
+            color: Colors.grey[600],
+            onPressed: _loadAgentStatus,
+            tooltip: '刷新状态',
+          ),
+        ],
       ),
       body: Column(
         children: [
           Expanded(
             child: isLoading && messages.isEmpty
                 ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFFE53935),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFFE53935)),
                   )
                 : messages.isEmpty
-                    ? Center(
-                        child: Text(
-                          '发送消息开始对话',
-                          style: TextStyle(
-                            color: Colors.grey[400],
-                            fontSize: 15,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 16,
-                        ),
-                        itemCount: messages.length,
-                        itemBuilder: (context, i) {
-                          return MessageBubble(
-                            message: messages[i],
+                ? Center(
+                    child: Text(
+                      '发送消息开始对话',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 15),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    itemCount: messages.length,
+                    itemBuilder: (context, i) {
+                      final msg = messages[i];
+                      // 检查是否在思考中
+                      final isThinking = chatService.thinkingMessages.contains(msg.messageId);
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          MessageBubble(
+                            message: msg,
                             botName: widget.conversation.name,
                             botAvatar: widget.conversation.avatar,
-                          );
-                        },
-                      ),
+                          ),
+                          if (isThinking)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 16, bottom: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '正在思考...',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
           ),
           // Input bar
           Container(
@@ -275,23 +322,6 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _CommandHelp extends StatelessWidget {
-  final String cmd;
-  final String desc;
-  const _CommandHelp({required this.cmd, required this.desc});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Text(cmd, style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFFE53935))),
-        const SizedBox(width: 12),
-        Text(desc, style: const TextStyle(color: Colors.black87)),
-      ],
     );
   }
 }
