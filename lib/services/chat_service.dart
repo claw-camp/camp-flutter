@@ -21,6 +21,8 @@ class ChatService extends ChangeNotifier {
   Map<String, Map<String, dynamic>> agentStatus = {};
   // 新增：思考状态
   Set<String> thinkingMessages = {};
+  // 新增：流式消息缓存（临时）
+  Map<String, String> streamingMessages = {}; // messageId -> accumulated content
 
   // 新增：分页状态
   Map<String, bool> hasMoreMap = {}; // 每个会话是否还有更多消息
@@ -85,6 +87,9 @@ class ChatService extends ChangeNotifier {
       case 'new-message':
         _handleNewMessage(payload);
         break;
+      case 'msg_stream': // 流式消息 chunk
+        _handleMsgStream(payload);
+        break;
       case 'msg_ack':
         _handleMsgAck(payload);
         break;
@@ -101,6 +106,64 @@ class ChatService extends ChangeNotifier {
         _handleAgentStatus(payload);
         break;
     }
+  }
+
+  void _handleMsgStream(Map<String, dynamic>? payload) {
+    if (payload == null) return;
+
+    final convId = payload['conversationId'] as String?;
+    final tempMsgId = payload['messageId'] as String?;
+    final chunk = payload['chunk'] as String?;
+    final isDone = payload['isDone'] as bool? ?? false;
+
+    if (convId == null || tempMsgId == null) return;
+
+    final existingMessages = messagesMap[convId] ?? [];
+    
+    // 如果 isDone，替换临时消息为真实消息
+    if (isDone) {
+      final realMsgData = payload['message'] as Map<String, dynamic>?;
+      if (realMsgData != null) {
+        final realMsg = Message.fromJson(realMsgData);
+        // 移除临时消息，添加真实消息
+        messagesMap[convId] = existingMessages
+            .where((m) => m.messageId != tempMsgId)
+            .toList()
+          ..add(realMsg);
+        streamingMessages.remove(tempMsgId);
+        _updateConversation(convId, realMsg.content, realMsg.createdAt);
+        notifyListeners();
+      }
+      return;
+    }
+
+    // 累积流式内容
+    final currentContent = streamingMessages[tempMsgId] ?? '';
+    final newContent = currentContent + (chunk ?? '');
+    streamingMessages[tempMsgId] = newContent;
+
+    // 更新或创建临时消息
+    final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
+    if (existingIdx >= 0) {
+      // 更新现有消息
+      messagesMap[convId]![existingIdx] = existingMessages[existingIdx].copyWith(
+        content: newContent,
+      );
+    } else {
+      // 创建临时消息
+      final tempMsg = Message(
+        messageId: tempMsgId,
+        conversationId: convId,
+        senderId: 'bot',
+        senderType: 'bot',
+        content: newContent,
+        createdAt: DateTime.now(),
+        status: 'pending',
+      );
+      messagesMap[convId] = [...existingMessages, tempMsg];
+    }
+
+    notifyListeners();
   }
 
   void _handleNewMessage(Map<String, dynamic>? payload) {

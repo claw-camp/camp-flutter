@@ -70,6 +70,7 @@ class Message {
   // 复制并更新状态
   Message copyWith({
     String? messageId,
+    String? content,
     String? status,
     DateTime? readAt,
     String? model,
@@ -82,7 +83,7 @@ class Message {
       conversationId: conversationId,
       senderId: senderId,
       senderType: senderType,
-      content: content,
+      content: content ?? this.content,
       contentType: contentType,
       createdAt: createdAt,
       status: status ?? this.status,

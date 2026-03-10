@@ -4,6 +4,7 @@ import '../models/conversation.dart';
 import '../services/chat_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/message_bubble.dart';
+import '../widgets/streaming_message.dart';
 
 class ChatScreen extends StatefulWidget {
   final Conversation conversation;
@@ -284,47 +285,51 @@ class _ChatScreenState extends State<ChatScreen> {
                                 horizontal: 12,
                                 vertical: 16,
                               ),
-                              itemCount: messages.length,
+                              itemCount: messages.length + 
+                                  (chatService.thinkingMessages.isNotEmpty ? 1 : 0),
                               itemBuilder: (context, i) {
-                                // reverse: true 时，需要反向索引
-                                final reversedIndex = messages.length - 1 - i;
-                                final msg = messages[reversedIndex];
-                                final isThinking = chatService.thinkingMessages.contains(msg.messageId);
-
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    MessageBubble(
-                                      message: msg,
+                                // 思考气泡在索引 0（视觉最底部）
+                                if (i == 0 && chatService.thinkingMessages.isNotEmpty) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: ThinkingBubble(
                                       botName: widget.conversation.name,
                                       botAvatar: widget.conversation.avatar,
                                     ),
-                                    if (isThinking)
-                                      Padding(
-                                        padding: const EdgeInsets.only(right: 16, bottom: 8),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            SizedBox(
-                                              width: 12,
-                                              height: 12,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 1.5,
-                                                color: Colors.grey[400],
-                                              ),
-                                            ),
-                                            const SizedBox(width: 6),
-                                            Text(
-                                              '正在思考...',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                color: Colors.grey[500],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                  ],
+                                  );
+                                }
+
+                                // 消息索引调整（因为可能有思考气泡）
+                                final msgIndex = chatService.thinkingMessages.isNotEmpty ? i - 1 : i;
+                                if (msgIndex < 0 || msgIndex >= messages.length) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                // reverse: true 时，需要反向索引
+                                final reversedIndex = messages.length - 1 - msgIndex;
+                                final msg = messages[reversedIndex];
+                                
+                                // 流式消息（状态为 pending）
+                                if (msg.status == 'pending' && msg.senderType == 'bot') {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: StreamingMessage(
+                                      content: msg.content,
+                                      botName: widget.conversation.name,
+                                      botAvatar: widget.conversation.avatar,
+                                      isStreaming: true,
+                                    ),
+                                  );
+                                }
+
+                                // 普通消息
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: MessageBubble(
+                                    message: msg,
+                                    botName: widget.conversation.name,
+                                    botAvatar: widget.conversation.avatar,
+                                  ),
                                 );
                               },
                             ),
