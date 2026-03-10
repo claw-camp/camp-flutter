@@ -21,14 +21,53 @@ class _ChatScreenState extends State<ChatScreen> {
   Map<String, dynamic>? _agentStatus;
   bool _loadingStatus = false;
 
+  // 分页相关
+  bool _isLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
     _chatService = context.read<ChatService>();
+    _scrollController.addListener(_onScroll); // 监听滚动
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _chatService.connectRealtime();
       _chatService.loadMessages(widget.conversation.conversationId);
       _loadAgentStatus();
+    });
+  }
+
+  void _onScroll() {
+    // 检测是否滚动到顶部附近（距离顶部 100px 以内）
+    if (_scrollController.hasClients &&
+        _scrollController.position.pixels <= 100 &&
+        !_isLoadingMore) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    final convId = widget.conversation.conversationId;
+    final hasMore = _chatService.hasMoreMap[convId] ?? false;
+    final loadingMore = _chatService.loadingMoreMap[convId] ?? false;
+
+    if (!hasMore || loadingMore) return;
+
+    setState(() => _isLoadingMore = true);
+
+    // 记录当前滚动位置和内容高度
+    final oldPosition = _scrollController.position.pixels;
+    final oldMaxExtent = _scrollController.position.maxScrollExtent;
+
+    await _chatService.loadMoreMessages(convId);
+
+    // 加载完成后，调整滚动位置，保持视觉位置不变
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        final newMaxExtent = _scrollController.position.maxScrollExtent;
+        final addedHeight = newMaxExtent - oldMaxExtent;
+        _scrollController.jumpTo(oldPosition + addedHeight);
+      }
+      setState(() => _isLoadingMore = false);
     });
   }
 
@@ -106,6 +145,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _chatService.disconnectRealtime();
     _controller.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -238,54 +278,87 @@ class _ChatScreenState extends State<ChatScreen> {
                       style: TextStyle(color: Colors.grey[400], fontSize: 15),
                     ),
                   )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 16,
-                    ),
-                    itemCount: messages.length,
-                    itemBuilder: (context, i) {
-                      final msg = messages[i];
-                      // 检查是否在思考中
-                      final isThinking = chatService.thinkingMessages.contains(msg.messageId);
-                      
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          MessageBubble(
-                            message: msg,
-                            botName: widget.conversation.name,
-                            botAvatar: widget.conversation.avatar,
-                          ),
-                          if (isThinking)
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16, bottom: 8),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox(
-                                    width: 12,
-                                    height: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.5,
-                                      color: Colors.grey[400],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '正在思考...',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Colors.grey[500],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                : Column(
+                    children: [
+                      // 加载更多指示器
+                      if (_chatService.loadingMoreMap[widget.conversation.conversationId] == true)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.grey[400],
                             ),
-                        ],
-                      );
-                    },
+                          ),
+                        ),
+                      // 没有更多消息提示
+                      if (_chatService.hasMoreMap[widget.conversation.conversationId] == false &&
+                          messages.length > ChatService.initialLimit)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            '没有更多消息了',
+                            style: TextStyle(
+                              color: Colors.grey[400],
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                      // 消息列表
+                      Expanded(
+                        child: ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 16,
+                          ),
+                          itemCount: messages.length,
+                          itemBuilder: (context, i) {
+                            final msg = messages[i];
+                            // 检查是否在思考中
+                            final isThinking = chatService.thinkingMessages.contains(msg.messageId);
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                MessageBubble(
+                                  message: msg,
+                                  botName: widget.conversation.name,
+                                  botAvatar: widget.conversation.avatar,
+                                ),
+                                if (isThinking)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 16, bottom: 8),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        SizedBox(
+                                          width: 12,
+                                          height: 12,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.5,
+                                            color: Colors.grey[400],
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          '正在思考...',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[500],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ),
           ),
           // Input bar

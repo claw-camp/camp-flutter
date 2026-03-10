@@ -16,11 +16,17 @@ class ChatService extends ChangeNotifier {
   Map<String, List<Message>> messagesMap = {};
   bool loading = false;
   StreamSubscription? _wsSub;
-  
+
   // 新增：Agent 状态
   Map<String, Map<String, dynamic>> agentStatus = {};
   // 新增：思考状态
   Set<String> thinkingMessages = {};
+
+  // 新增：分页状态
+  Map<String, bool> hasMoreMap = {}; // 每个会话是否还有更多消息
+  Map<String, bool> loadingMoreMap = {}; // 每个会话是否正在加载更多
+  static const int initialLimit = 10; // 初始加载 10 条
+  static const int loadMoreLimit = 20; // 加载更多 20 条
 
   ChatService(this._auth) {
     if (_auth.campKey != null) _init();
@@ -36,6 +42,8 @@ class ChatService extends ChangeNotifier {
       messagesMap = {};
       agentStatus = {};
       thinkingMessages.clear();
+      hasMoreMap = {};
+      loadingMoreMap = {};
       notifyListeners();
       return;
     }
@@ -247,10 +255,62 @@ class ChatService extends ChangeNotifier {
 
   Future<List<Message>> loadMessages(String conversationId) async {
     if (_api == null) return [];
-    final msgs = await _api!.getMessages(conversationId);
-    messagesMap[conversationId] = msgs;
+    loading = true;
     notifyListeners();
-    return msgs;
+    try {
+      final msgs = await _api!.getMessages(conversationId, limit: initialLimit);
+      messagesMap[conversationId] = msgs;
+      // 如果返回的消息数小于请求的数量，说明没有更多了
+      hasMoreMap[conversationId] = msgs.length >= initialLimit;
+    } catch (_) {
+      messagesMap[conversationId] = [];
+      hasMoreMap[conversationId] = false;
+    }
+    loading = false;
+    notifyListeners();
+    return messagesMap[conversationId] ?? [];
+  }
+
+  /// 加载更多历史消息（往上翻）
+  Future<void> loadMoreMessages(String conversationId) async {
+    if (_api == null) return;
+
+    // 如果已经在加载或没有更多消息，直接返回
+    if (loadingMoreMap[conversationId] == true) return;
+    if (hasMoreMap[conversationId] == false) return;
+
+    final existingMsgs = messagesMap[conversationId];
+    if (existingMsgs == null || existingMsgs.isEmpty) return;
+
+    // 获取最早的消息 ID
+    final oldestMsgId = existingMsgs.first.messageId;
+    if (oldestMsgId.isEmpty) return;
+
+    loadingMoreMap[conversationId] = true;
+    notifyListeners();
+
+    try {
+      final olderMsgs = await _api!.getMessages(
+        conversationId,
+        limit: loadMoreLimit,
+        before: oldestMsgId,
+      );
+
+      if (olderMsgs.isNotEmpty) {
+        // 将旧消息插入到前面
+        messagesMap[conversationId] = [...olderMsgs, ...existingMsgs];
+        // 如果返回的消息数小于请求的数量，说明没有更多了
+        hasMoreMap[conversationId] = olderMsgs.length >= loadMoreLimit;
+      } else {
+        // 没有消息了
+        hasMoreMap[conversationId] = false;
+      }
+    } catch (_) {
+      // 加载失败，保持现有状态
+    }
+
+    loadingMoreMap[conversationId] = false;
+    notifyListeners();
   }
 
   Future<void> sendMessage(

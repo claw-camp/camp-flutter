@@ -27,11 +27,16 @@ class ApiService {
     throw Exception('获取会话失败: ${res.body}');
   }
 
-  Future<List<Message>> getMessages(String conversationId, {int limit = 50}) async {
-    final res = await http.get(
-      Uri.parse('$_baseUrl/api/chat/messages/$conversationId?limit=$limit'),
-      headers: _headers,
-    );
+  Future<List<Message>> getMessages(
+    String conversationId, {
+    int limit = 50,
+    String? before, // 加载此消息 ID 之前的消息
+  }) async {
+    var url = '$_baseUrl/api/chat/messages/$conversationId?limit=$limit';
+    if (before != null) {
+      url += '&before=$before';
+    }
+    final res = await http.get(Uri.parse(url), headers: _headers);
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
       final list = data['messages'] as List;

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_file/open_file.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -31,9 +32,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _loadVersion() async {
-    final info = await PackageInfo.fromPlatform();
-    if (mounted) {
-      setState(() => _currentVersion = info.version);
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() => _currentVersion = info.version);
+      }
+    } catch (e) {
+      // package_info_plus 可能失败，使用默认值
+      if (mounted) {
+        setState(() => _currentVersion = '1.0.0');
+      }
     }
   }
 
@@ -190,16 +198,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
 
-      // 调用系统安装器
-      final result = await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
-      if (result.type != ResultType.done) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('安装失败: ${result.message}'),
-              backgroundColor: Colors.red,
-            ),
-          );
+      // 使用 Android Intent 安装（更可靠）
+      if (Platform.isAndroid) {
+        // 使用 MethodChannel 调用原生安装
+        final platform = MethodChannel('com.clawcamp.camp_flutter/install');
+        try {
+          await platform.invokeMethod('installApk', {'path': apkPath});
+        } catch (e) {
+          // 回退到 OpenFile
+          final result = await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
+          if (result.type != ResultType.done) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('安装失败: ${result.message}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      } else {
+        final result = await OpenFile.open(apkPath);
+        if (result.type != ResultType.done) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('打开失败: ${result.message}'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
         }
       }
     } catch (e) {
