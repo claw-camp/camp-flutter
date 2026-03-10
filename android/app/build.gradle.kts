@@ -1,7 +1,17 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// 加载签名配置
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -28,10 +38,10 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = "clawcamp"
-            keyPassword = "clawcamp123"
-            storeFile = file("../clawcamp.jks")
-            storePassword = "clawcamp123"
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file("$rootDir/$it") }
+            storePassword = keystoreProperties["storePassword"] as String?
         }
     }
 
