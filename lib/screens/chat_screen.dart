@@ -1,0 +1,349 @@
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../models/conversation.dart';
+import '../services/chat_service.dart';
+import '../services/auth_service.dart';
+import '../widgets/message_bubble.dart';
+
+class ChatScreen extends StatefulWidget {
+  final Conversation conversation;
+
+  const ChatScreen({super.key, required this.conversation});
+
+  @override
+  State<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends State<ChatScreen> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  late final ChatService _chatService;
+  Map<String, dynamic>? _agentStatus;
+  bool _loadingStatus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _chatService = context.read<ChatService>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _chatService.connectRealtime();
+      _chatService.loadMessages(widget.conversation.conversationId);
+      _loadAgentStatus();
+    });
+  }
+
+  Future<void> _loadAgentStatus() async {
+    if (_loadingStatus) return;
+    _loadingStatus = true;
+    final status = await _chatService.getAgentStatus(widget.conversation.botId);
+    if (mounted) {
+      setState(() {
+        _agentStatus = status;
+        _loadingStatus = false;
+      });
+    }
+  }
+
+  void _send() {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    _controller.clear();
+
+    // 处理斜杠命令
+    if (text.startsWith('/')) {
+      _handleSlashCommand(text);
+      return;
+    }
+
+    _chatService.sendMessage(
+      widget.conversation.conversationId,
+      text,
+      botId: widget.conversation.botId,
+    );
+
+    Future.delayed(const Duration(milliseconds: 100), _scrollToBottom);
+  }
+
+  void _handleSlashCommand(String cmd) {
+    final parts = cmd.split(' ');
+    final command = parts[0].toLowerCase();
+
+    switch (command) {
+      case '/clear':
+        _chatService.clearMessages(widget.conversation.conversationId);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('聊天记录已清空'),
+            duration: Duration(seconds: 1),
+          ),
+        );
+        break;
+      case '/logout':
+        context.read<AuthService>().logout();
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        break;
+      default:
+        // 其他命令（/model, /abort, /help 等）直接发给 Agent
+        _chatService.sendMessage(
+          widget.conversation.conversationId,
+          cmd,
+          botId: widget.conversation.botId,
+        );
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _chatService.disconnectRealtime();
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final chatService = context.watch<ChatService>();
+    final messages =
+        chatService.messagesMap[widget.conversation.conversationId] ?? [];
+    final isLoading = chatService.loading;
+    
+    // 获取 Agent 状态（按 botId 或名称匹配，或任意在线 Agent）
+    final botId = widget.conversation.botId;
+    var cachedStatus = chatService.agentStatus[botId];
+    
+    // 如果按 botId 找不到，尝试按名称匹配
+    if (cachedStatus == null) {
+      final convName = widget.conversation.name;
+      for (final status in chatService.agentStatus.values) {
+        if (status['name'] == convName) {
+          cachedStatus = status;
+          break;
+        }
+      }
+    }
+    
+    // 如果还是找不到，取任意在线的 Agent
+    if (cachedStatus == null && chatService.agentStatus.isNotEmpty) {
+      for (final status in chatService.agentStatus.values) {
+        if (status['status'] == 'online') {
+          cachedStatus = status;
+          break;
+        }
+      }
+    }
+    
+    final status = cachedStatus ?? _agentStatus;
+    final agentOnline = status?['status'] == 'online';
+    final agentModel = status?['model'] as String?;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F5F5),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, size: 20),
+          color: const Color(0xFF333333),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Column(
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFFE53935),
+                  backgroundImage: widget.conversation.avatar != null
+                      ? NetworkImage(widget.conversation.avatar!)
+                      : null,
+                  child: widget.conversation.avatar == null
+                      ? Text(
+                          widget.conversation.name.isNotEmpty
+                              ? widget.conversation.name[0].toUpperCase()
+                              : 'A',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  widget.conversation.name,
+                  style: const TextStyle(
+                    color: Color(0xFF333333),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                // 在线状态指示器
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: agentOnline ? Colors.green : Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ),
+            // 副标题：模型和状态
+            if (agentModel != null || status != null)
+              Text(
+                agentModel ?? (agentOnline ? '在线' : '离线'),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[500],
+                ),
+              ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh, size: 20),
+            color: Colors.grey[600],
+            onPressed: _loadAgentStatus,
+            tooltip: '刷新状态',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: isLoading && messages.isEmpty
+                ? const Center(
+                    child: CircularProgressIndicator(color: Color(0xFFE53935)),
+                  )
+                : messages.isEmpty
+                ? Center(
+                    child: Text(
+                      '发送消息开始对话',
+                      style: TextStyle(color: Colors.grey[400], fontSize: 15),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 16,
+                    ),
+                    itemCount: messages.length,
+                    itemBuilder: (context, i) {
+                      final msg = messages[i];
+                      // 检查是否在思考中
+                      final isThinking = chatService.thinkingMessages.contains(msg.messageId);
+                      
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          MessageBubble(
+                            message: msg,
+                            botName: widget.conversation.name,
+                            botAvatar: widget.conversation.avatar,
+                          ),
+                          if (isThinking)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 16, bottom: 8),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  SizedBox(
+                                    width: 12,
+                                    height: 12,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 1.5,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '正在思考...',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[500],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      );
+                    },
+                  ),
+          ),
+          // Input bar
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withAlpha(8),
+                  blurRadius: 4,
+                  offset: const Offset(0, -1),
+                ),
+              ],
+            ),
+            padding: EdgeInsets.only(
+              left: 12,
+              right: 8,
+              top: 8,
+              bottom: MediaQuery.of(context).padding.bottom + 8,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 120),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F5F5),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: TextField(
+                      controller: _controller,
+                      maxLines: null,
+                      style: const TextStyle(fontSize: 15),
+                      decoration: const InputDecoration(
+                        hintText: '输入消息...',
+                        hintStyle: TextStyle(color: Color(0xFFBBBBBB)),
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                      ),
+                      onSubmitted: (_) => _send(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                IconButton(
+                  onPressed: _send,
+                  icon: const Icon(Icons.send_rounded),
+                  color: const Color(0xFFE53935),
+                  iconSize: 24,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
