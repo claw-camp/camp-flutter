@@ -198,37 +198,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }
       }
 
-      // 使用 Android Intent 安装（更可靠）
-      if (Platform.isAndroid) {
-        // 使用 MethodChannel 调用原生安装
-        final platform = MethodChannel('com.clawcamp.camp_flutter/install');
-        try {
-          await platform.invokeMethod('installApk', {'path': apkPath});
-        } catch (e) {
-          // 回退到 OpenFile
-          final result = await OpenFile.open(apkPath, type: 'application/vnd.android.package-archive');
-          if (result.type != ResultType.done) {
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('安装失败: ${result.message}'),
-                  backgroundColor: Colors.red,
-                ),
-              );
-            }
-          }
-        }
-      } else {
-        final result = await OpenFile.open(apkPath);
-        if (result.type != ResultType.done) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('打开失败: ${result.message}'),
-                backgroundColor: Colors.red,
+      // 使用 OpenFile 打开 APK 安装
+      final result = await OpenFile.open(
+        apkPath,
+        type: 'application/vnd.android.package-archive',
+      );
+
+      if (result.type != ResultType.done) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('安装失败: ${result.message}'),
+              backgroundColor: Colors.red,
+              action: SnackBarAction(
+                label: '手动安装',
+                textColor: Colors.white,
+                onPressed: () {
+                  // 打开文件管理器
+                  OpenFile.open(apkPath);
+                },
               ),
-            );
-          }
+            ),
+          );
         }
       }
     } catch (e) {
