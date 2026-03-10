@@ -30,6 +30,8 @@ class _ChatScreenState extends State<ChatScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _chatService.connectRealtime();
       _chatService.loadMessages(widget.conversation.conversationId);
+      // 进入聊天时，立即清除未读数量
+      _chatService.markConversationAsRead(widget.conversation.conversationId);
       _loadAgentStatus();
     });
   }

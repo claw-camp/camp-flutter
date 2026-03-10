@@ -374,6 +374,26 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 标记会话为已读（清除本地未读数量）
+  void markConversationAsRead(String conversationId) {
+    final idx = conversations.indexWhere((c) => c.conversationId == conversationId);
+    if (idx >= 0 && conversations[idx].unreadCount > 0) {
+      conversations[idx] = Conversation(
+        id: conversations[idx].id,
+        conversationId: conversations[idx].conversationId,
+        type: conversations[idx].type,
+        name: conversations[idx].name,
+        avatar: conversations[idx].avatar,
+        unreadCount: 0, // 清除未读数量
+        lastMessage: conversations[idx].lastMessage,
+        lastMessageAt: conversations[idx].lastMessageAt,
+        botId: conversations[idx].botId,
+      );
+      notifyListeners();
+    }
+    // 后端会在 loadMessages 时自动更新 last_read_at
+  }
+
   Future<Map<String, dynamic>> getAgentStatus(String? botId) async {
     if (botId == null) return {'status': '未知'};
     
