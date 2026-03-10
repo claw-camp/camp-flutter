@@ -54,20 +54,28 @@ class _ChatScreenState extends State<ChatScreen> {
 
     setState(() => _isLoadingMore = true);
 
-    // 记录当前滚动位置和内容高度
-    final oldPosition = _scrollController.position.pixels;
-    final oldMaxExtent = _scrollController.position.maxScrollExtent;
+    // 记录当前滚动状态
+    final oldScrollPosition = _scrollController.position.pixels;
+    final oldMaxScrollExtent = _scrollController.position.maxScrollExtent;
 
     await _chatService.loadMoreMessages(convId);
 
-    // 加载完成后，调整滚动位置，保持视觉位置不变
+    // 加载完成后，等待列表重建
+    await Future.delayed(const Duration(milliseconds: 50));
+
+    // 调整滚动位置，保持用户看到的内容不变
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
-        final newMaxExtent = _scrollController.position.maxScrollExtent;
-        final addedHeight = newMaxExtent - oldMaxExtent;
-        _scrollController.jumpTo(oldPosition + addedHeight);
+        final newMaxScrollExtent = _scrollController.position.maxScrollExtent;
+        final addedHeight = newMaxScrollExtent - oldMaxScrollExtent;
+        
+        // 新增内容在顶部，所以滚动位置需要向下移动相同距离
+        final newPosition = oldScrollPosition + addedHeight;
+        _scrollController.jumpTo(newPosition.clamp(0.0, newMaxScrollExtent));
       }
-      setState(() => _isLoadingMore = false);
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     });
   }
 
