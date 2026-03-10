@@ -23,7 +23,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // 分页相关
   bool _isLoadingMore = false;
-  String? _lastMessageId; // 记录最新消息 ID
+  bool _isInitialized = false; // 是否已完成初始加载
+  String? _lastLatestMessageId; // 记录最新消息的 ID
 
   @override
   void initState() {
@@ -196,17 +197,22 @@ class _ChatScreenState extends State<ChatScreen> {
     final agentOnline = status?['status'] == 'online';
     final agentModel = status?['model'] as String?;
 
-    // 检查是否有新消息到达（最新消息 ID 变化，且不是加载历史消息）
     final latestMessageId = messages.isNotEmpty ? messages.last.messageId : null;
-    final hasNewMessage = latestMessageId != null && 
-                          latestMessageId != _lastMessageId && 
-                          !_isLoadingMore;
-    
-    if (hasNewMessage) {
-      // 新消息到达，滚动到底部
+
+    if (!_isInitialized && messages.isNotEmpty && !isLoading) {
+      // 初始加载完成
+      _isInitialized = true;
+      _lastLatestMessageId = latestMessageId;
+      // 首次加载，滚动到底部
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    } else if (_isInitialized && 
+               latestMessageId != null && 
+               latestMessageId != _lastLatestMessageId && 
+               !_isLoadingMore) {
+      // 收到新消息（最新消息 ID 变化，且不是加载历史）
+      _lastLatestMessageId = latestMessageId;
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
     }
-    _lastMessageId = latestMessageId;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
