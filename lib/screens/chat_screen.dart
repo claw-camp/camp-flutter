@@ -23,6 +23,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // 分页相关
   bool _isLoadingMore = false;
+  String? _lastMessageId; // 记录最新消息 ID
 
   @override
   void initState() {
@@ -52,31 +53,29 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (!hasMore || loadingMore) return;
 
-    setState(() => _isLoadingMore = true);
-
-    // 记录当前滚动状态
+    // 记录当前滚动位置
     final oldScrollPosition = _scrollController.position.pixels;
     final oldMaxScrollExtent = _scrollController.position.maxScrollExtent;
+    
+    setState(() => _isLoadingMore = true);
 
     await _chatService.loadMoreMessages(convId);
 
-    // 加载完成后，等待列表重建
-    await Future.delayed(const Duration(milliseconds: 50));
-
-    // 调整滚动位置，保持用户看到的内容不变
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        final newMaxScrollExtent = _scrollController.position.maxScrollExtent;
-        final addedHeight = newMaxScrollExtent - oldMaxScrollExtent;
-        
-        // 新增内容在顶部，所以滚动位置需要向下移动相同距离
-        final newPosition = oldScrollPosition + addedHeight;
-        _scrollController.jumpTo(newPosition.clamp(0.0, newMaxScrollExtent));
+    // 等待足够长的时间，确保列表完全重建
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    // 调整滚动位置
+    if (_scrollController.hasClients && mounted) {
+      final newMaxScrollExtent = _scrollController.position.maxScrollExtent;
+      final addedHeight = newMaxScrollExtent - oldMaxScrollExtent;
+      
+      if (addedHeight > 0) {
+        // 新增内容在顶部，向下移动相同距离
+        _scrollController.jumpTo(oldScrollPosition + addedHeight);
       }
-      if (mounted) {
-        setState(() => _isLoadingMore = false);
-      }
-    });
+      
+      setState(() => _isLoadingMore = false);
+    }
   }
 
   Future<void> _loadAgentStatus() async {
@@ -140,6 +139,9 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToBottom() {
+    // 如果正在加载更多消息，不要滚动
+    if (_isLoadingMore) return;
+    
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
@@ -194,7 +196,17 @@ class _ChatScreenState extends State<ChatScreen> {
     final agentOnline = status?['status'] == 'online';
     final agentModel = status?['model'] as String?;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    // 检查是否有新消息到达（最新消息 ID 变化，且不是加载历史消息）
+    final latestMessageId = messages.isNotEmpty ? messages.last.messageId : null;
+    final hasNewMessage = latestMessageId != null && 
+                          latestMessageId != _lastMessageId && 
+                          !_isLoadingMore;
+    
+    if (hasNewMessage) {
+      // 新消息到达，滚动到底部
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+    _lastMessageId = latestMessageId;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
