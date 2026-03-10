@@ -126,6 +126,26 @@ create_github_release() {
     log_info "GitHub Release 已创建: https://github.com/$REPO/releases/tag/$tag"
 }
 
+# 上传到 COS
+upload_to_cos() {
+    local version="$1"
+    
+    log_info "上传 APK 到腾讯云 COS..."
+    
+    local TC_SCRIPT="$HOME/.openclaw/workspace/skills/tencent-cloud/scripts/tc"
+    local APK_PATH="./build/app/outputs/flutter-apk/app-release.apk"
+    
+    # 上传到 COS（覆盖旧版本）
+    $TC_SCRIPT cos upload claw-camp-1307257815 "$APK_PATH" releases/app-release.apk ap-guangzhou > /dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        log_info "COS 上传成功: https://claw-camp-1307257815.cos.ap-guangzhou.myqcloud.com/releases/app-release.apk"
+    else
+        log_error "COS 上传失败"
+        exit 1
+    fi
+}
+
 # 更新服务器版本配置
 update_server_config() {
     local version="$1"
@@ -136,7 +156,7 @@ update_server_config() {
     ssh -i "$SSH_KEY" "$SERVER_USER" "cat > ~/claw-hub/src/app-version.json << 'EOF'
 {
   \"version\": \"$version\",
-  \"downloadUrl\": \"https://github.com/$REPO/releases/latest/download/app-release.apk\",
+  \"downloadUrl\": \"https://claw-camp-1307257815.cos.ap-guangzhou.myqcloud.com/releases/app-release.apk\",
   \"releaseNotes\": \"$notes\"
 }
 EOF
@@ -203,6 +223,7 @@ main() {
     # 执行发布流程
     update_version "$new_version" "$new_build"
     build_apk
+    upload_to_cos "$new_version"
     git_release "$new_version"
     create_github_release "$new_version" "$notes"
     update_server_config "$new_version" "$notes"

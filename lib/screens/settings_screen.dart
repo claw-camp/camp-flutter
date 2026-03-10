@@ -110,7 +110,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(ctx);
-              _downloadAndInstall(downloadUrl);
+              _downloadAndInstall(downloadUrl, latest);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFE53935),
@@ -123,18 +123,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Future<void> _downloadAndInstall(String downloadUrl) async {
+  Future<void> _downloadAndInstall(String downloadUrl, String version) async {
     setState(() {
       _downloading = true;
       _downloadProgress = 0;
     });
 
     try {
-      // 获取下载目录
-      final dir = await getApplicationSupportDirectory();
-      final apkDir = Directory('${dir.path}/apk');
+      // 获取外部存储下载目录（安装器可访问）
+      Directory? dir;
+      if (Platform.isAndroid) {
+        // Android: 使用外部存储的 Download 目录
+        dir = Directory('/storage/emulated/0/Download');
+        if (!await dir.exists()) {
+          // 回退到应用外部目录
+          dir = await getExternalStorageDirectory();
+        }
+      } else {
+        dir = await getApplicationSupportDirectory();
+      }
+      
+      final apkDir = Directory('${dir!.path}/clawcamp');
       if (!await apkDir.exists()) await apkDir.create(recursive: true);
-      final apkPath = '${apkDir.path}/update.apk';
+      final apkPath = '${apkDir.path}/camp-flutter-$version.apk';
 
       // 流式下载，带进度
       final request = http.Request('GET', Uri.parse(downloadUrl));
