@@ -139,7 +139,7 @@ upload_to_cos() {
     $TC_SCRIPT cos upload claw-camp-1307257815 "$APK_PATH" releases/app-release.apk ap-guangzhou > /dev/null 2>&1
     
     if [ $? -eq 0 ]; then
-        log_info "COS 上传成功: https://claw-camp-1307257815.cos.ap-guangzhou.myqcloud.com/releases/app-release.apk"
+        log_info "COS 上传成功: https://release.camp.aigc.sx.cn/releases/app-release.apk"
     else
         log_error "COS 上传失败"
         exit 1
@@ -156,7 +156,7 @@ update_server_config() {
     ssh -i "$SSH_KEY" "$SERVER_USER" "cat > ~/claw-hub/src/app-version.json << 'EOF'
 {
   \"version\": \"$version\",
-  \"downloadUrl\": \"https://claw-camp-1307257815.cos.ap-guangzhou.myqcloud.com/releases/app-release.apk\",
+  \"downloadUrl\": \"https://release.camp.aigc.sx.cn/releases/app-release.apk\",
   \"releaseNotes\": \"$notes\"
 }
 EOF
