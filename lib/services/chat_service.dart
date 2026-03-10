@@ -460,17 +460,8 @@ class ChatService extends ChangeNotifier {
   Future<Map<String, dynamic>> getAgentStatus(String? botId) async {
     if (botId == null) return {'status': '未知'};
     
-    // 先检查缓存
-    final cached = agentStatus[botId];
-    if (cached != null) {
-      final lastUpdate = cached['lastUpdate'] as DateTime?;
-      if (lastUpdate != null && 
-          DateTime.now().difference(lastUpdate).inSeconds < 30) {
-        return cached;
-      }
-    }
-    
-    if (_api == null) return cached ?? {'status': '未知'};
+    // 🔥 移除缓存，每次都实时查询
+    if (_api == null) return {'status': '未知'};
     try {
       final agents = await _api!.getAgents();
       final agent = agents.firstWhere(
@@ -488,8 +479,9 @@ class ChatService extends ChangeNotifier {
               ).toString().substring(0, 19)
             : '-',
       };
-    } catch (_) {
-      return cached ?? {'status': '查询失败'};
+    } catch (e) {
+      print('❌ 获取 Agent 状态失败: $e');
+      return {'status': '查询失败'};
     }
   }
 
