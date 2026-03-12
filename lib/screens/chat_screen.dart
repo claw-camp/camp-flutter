@@ -130,8 +130,10 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final chatService = context.watch<ChatService>();
-    final messages =
-        chatService.messagesMap[widget.conversation.conversationId] ?? [];
+    final convId = widget.conversation.conversationId;
+    final messages = chatService.messagesMap[convId] ?? [];
+    final statusMessage = chatService.statusMessages[convId];
+    final reasoningMessage = chatService.reasoningMessages[convId];
     final isLoading = chatService.loading;
 
     final botId = widget.conversation.botId;
@@ -285,11 +287,40 @@ class _ChatScreenState extends State<ChatScreen> {
                                 horizontal: 12,
                                 vertical: 16,
                               ),
-                              itemCount: messages.length + 
+                              itemCount: messages.length +
+                                  (statusMessage != null ? 1 : 0) +
+                                  (reasoningMessage != null ? 1 : 0) +
                                   (chatService.thinkingMessages.isNotEmpty ? 1 : 0),
                               itemBuilder: (context, i) {
-                                // 思考气泡在索引 0（视觉最底部）
-                                if (i == 0 && chatService.thinkingMessages.isNotEmpty) {
+                                var extraIndex = 0;
+
+                                if (statusMessage != null && i == extraIndex) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: StatusBubble(
+                                      text: (statusMessage['text'] ?? '').toString(),
+                                      state: (statusMessage['state'] ?? 'working').toString(),
+                                      botName: widget.conversation.name,
+                                      botAvatar: widget.conversation.avatar,
+                                    ),
+                                  );
+                                }
+                                if (statusMessage != null) extraIndex++;
+
+                                if (reasoningMessage != null && i == extraIndex) {
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: ReasoningBubble(
+                                      text: (reasoningMessage['text'] ?? '').toString(),
+                                      isComplete: (reasoningMessage['state'] ?? '') == 'complete',
+                                      botName: widget.conversation.name,
+                                      botAvatar: widget.conversation.avatar,
+                                    ),
+                                  );
+                                }
+                                if (reasoningMessage != null) extraIndex++;
+
+                                if (chatService.thinkingMessages.isNotEmpty && i == extraIndex) {
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 12),
                                     child: ThinkingBubble(
@@ -298,9 +329,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                     ),
                                   );
                                 }
+                                if (chatService.thinkingMessages.isNotEmpty) extraIndex++;
 
-                                // 消息索引调整（因为可能有思考气泡）
-                                final msgIndex = chatService.thinkingMessages.isNotEmpty ? i - 1 : i;
+                                final msgIndex = i - extraIndex;
                                 if (msgIndex < 0 || msgIndex >= messages.length) {
                                   return const SizedBox.shrink();
                                 }

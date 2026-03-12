@@ -66,11 +66,19 @@ class _StreamingMessageState extends State<StreamingMessage>
 
   void _startStreaming() {
     _timer?.cancel();
-    _charIndex = 0;
-    _timer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
+
+    if (_displayText.isNotEmpty && widget.content.startsWith(_displayText)) {
+      _charIndex = _displayText.length;
+    } else {
+      _charIndex = 0;
+      _displayText = '';
+    }
+
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
       if (_charIndex < widget.content.length) {
+        final step = (widget.content.length - _charIndex) > 12 ? 3 : 1;
         setState(() {
-          _charIndex++;
+          _charIndex = (_charIndex + step).clamp(0, widget.content.length);
           _displayText = widget.content.substring(0, _charIndex);
         });
       } else {
@@ -164,6 +172,157 @@ class _StreamingMessageState extends State<StreamingMessage>
 }
 
 /// 思考状态气泡 - 三个点呼吸动效
+class StatusBubble extends StatelessWidget {
+  final String text;
+  final String state;
+  final String botName;
+  final String? botAvatar;
+
+  const StatusBubble({
+    super.key,
+    required this.text,
+    required this.state,
+    required this.botName,
+    this.botAvatar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (state) {
+      'error' => Colors.red,
+      'complete' => Colors.green,
+      'tool' => Colors.orange,
+      'replying' => const Color(0xFFE53935),
+      _ => Colors.blueGrey,
+    };
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: const Color(0xFFE53935),
+          backgroundImage: botAvatar != null ? NetworkImage(botAvatar!) : null,
+          child: botAvatar == null
+              ? Text(
+                  botName.isNotEmpty ? botName[0].toUpperCase() : 'B',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: color.withAlpha(60)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    text.isEmpty ? '正在处理中...' : text,
+                    style: const TextStyle(fontSize: 14, color: Color(0xFF333333)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class ReasoningBubble extends StatelessWidget {
+  final String text;
+  final bool isComplete;
+  final String botName;
+  final String? botAvatar;
+
+  const ReasoningBubble({
+    super.key,
+    required this.text,
+    required this.isComplete,
+    required this.botName,
+    this.botAvatar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: const Color(0xFFE53935),
+          backgroundImage: botAvatar != null ? NetworkImage(botAvatar!) : null,
+          child: botAvatar == null
+              ? Text(
+                  botName.isNotEmpty ? botName[0].toUpperCase() : 'B',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                )
+              : null,
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF7F7F7),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey.withAlpha(60)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isComplete ? '💭 思考完成' : '🤔 思考中',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                if (text.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    text,
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: Colors.grey[700],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class ThinkingBubble extends StatefulWidget {
   final String botName;
   final String? botAvatar;

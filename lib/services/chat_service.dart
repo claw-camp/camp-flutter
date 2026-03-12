@@ -21,8 +21,11 @@ class ChatService extends ChangeNotifier {
   Map<String, Map<String, dynamic>> agentStatus = {};
   // 新增：思考状态
   Set<String> thinkingMessages = {};
+  // 新增：工作状态 / 思考文本（按会话保存）
+  Map<String, Map<String, dynamic>> statusMessages = {};
+  Map<String, Map<String, dynamic>> reasoningMessages = {};
   // 新增：流式消息缓存（临时）
-  Map<String, String> streamingMessages = {}; // messageId -> accumulated content
+  Map<String, String> streamingMessages = {}; // messageId -> latest full content
 
   // 新增：分页状态
   Map<String, bool> hasMoreMap = {}; // 每个会话是否还有更多消息
@@ -44,6 +47,9 @@ class ChatService extends ChangeNotifier {
       messagesMap = {};
       agentStatus = {};
       thinkingMessages.clear();
+      statusMessages.clear();
+      reasoningMessages.clear();
+      streamingMessages.clear();
       hasMoreMap = {};
       loadingMoreMap = {};
       notifyListeners();
@@ -85,8 +91,15 @@ class ChatService extends ChangeNotifier {
     switch (type) {
       case 'chat-message':
       case 'new-message':
-        _handleNewMessage(payload);
+        if (payload != null && payload['statusState'] != null) {
+          _handleStatusMessage(payload);
+        } else if (payload != null && payload['reasoningState'] != null) {
+          _handleReasoningMessage(payload);
+        } else {
+          _handleNewMessage(payload);
+        }
         break;
+      case 'chat-stream':
       case 'msg_stream': // 流式消息 chunk
         _handleMsgStream(payload);
         break;
@@ -119,38 +132,34 @@ class ChatService extends ChangeNotifier {
     if (convId == null || tempMsgId == null) return;
 
     final existingMessages = messagesMap[convId] ?? [];
-    
-    // 如果 isDone，替换临时消息为真实消息
+
     if (isDone) {
-      final realMsgData = payload['message'] as Map<String, dynamic>?;
-      if (realMsgData != null) {
-        final realMsg = Message.fromJson(realMsgData);
-        // 移除临时消息，添加真实消息
-        messagesMap[convId] = existingMessages
-            .where((m) => m.messageId != tempMsgId)
-            .toList()
-          ..add(realMsg);
-        streamingMessages.remove(tempMsgId);
-        _updateConversation(convId, realMsg.content, realMsg.createdAt);
-        notifyListeners();
+      final finalContent = chunk ?? streamingMessages[tempMsgId] ?? '';
+      if (finalContent.isNotEmpty) {
+        final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
+        if (existingIdx >= 0) {
+          messagesMap[convId]![existingIdx] = existingMessages[existingIdx].copyWith(
+            content: finalContent,
+            status: 'sent',
+          );
+        }
       }
+      streamingMessages.remove(tempMsgId);
+      notifyListeners();
       return;
     }
 
-    // 累积流式内容
-    final currentContent = streamingMessages[tempMsgId] ?? '';
-    final newContent = currentContent + (chunk ?? '');
+    // Hub 发来的 chunk 实际是“当前完整文本”，不是增量拼接
+    final newContent = chunk ?? '';
     streamingMessages[tempMsgId] = newContent;
 
-    // 更新或创建临时消息
     final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
     if (existingIdx >= 0) {
-      // 更新现有消息
       messagesMap[convId]![existingIdx] = existingMessages[existingIdx].copyWith(
         content: newContent,
+        status: 'pending',
       );
     } else {
-      // 创建临时消息
       final tempMsg = Message(
         messageId: tempMsgId,
         conversationId: convId,
@@ -162,6 +171,49 @@ class ChatService extends ChangeNotifier {
       );
       messagesMap[convId] = [...existingMessages, tempMsg];
     }
+
+    if (newContent.isNotEmpty) {
+      _updateConversation(convId, newContent, DateTime.now());
+    }
+    notifyListeners();
+  }
+
+  void _handleStatusMessage(Map<String, dynamic>? payload) {
+    if (payload == null) return;
+    final convId = (payload['conversationId'] ?? payload['conversation_id']) as String?;
+    if (convId == null || convId.isEmpty) return;
+
+    statusMessages[convId] = {
+      'messageId': payload['message_id'] ?? payload['messageId'] ?? '',
+      'state': payload['statusState'] ?? 'working',
+      'text': payload['statusTask'] ?? payload['content'] ?? '',
+      'updatedAt': DateTime.now(),
+    };
+
+    final state = payload['statusState']?.toString() ?? '';
+    if (state == 'complete' || state == 'error') {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (statusMessages[convId]?['state'] == state) {
+          statusMessages.remove(convId);
+          notifyListeners();
+        }
+      });
+    }
+
+    notifyListeners();
+  }
+
+  void _handleReasoningMessage(Map<String, dynamic>? payload) {
+    if (payload == null) return;
+    final convId = (payload['conversationId'] ?? payload['conversation_id']) as String?;
+    if (convId == null || convId.isEmpty) return;
+
+    reasoningMessages[convId] = {
+      'messageId': payload['message_id'] ?? payload['messageId'] ?? '',
+      'state': payload['reasoningState'] ?? 'thinking',
+      'text': payload['reasoningText'] ?? payload['content'] ?? '',
+      'updatedAt': DateTime.now(),
+    };
 
     notifyListeners();
   }
@@ -175,6 +227,9 @@ class ChatService extends ChangeNotifier {
 
     final senderType = payload['senderType'] ?? payload['sender_type'] ?? 'bot';
     if (senderType == 'user') return;
+
+    statusMessages.remove(convId);
+    reasoningMessages.remove(convId);
 
     final payloadType = payload['type'] as String?;
     if (payloadType == 'typing') return;
@@ -253,6 +308,7 @@ class ChatService extends ChangeNotifier {
 
     // 清除思考状态
     thinkingMessages.remove(msgId);
+    statusMessages.remove(convId);
 
     final msgs = messagesMap[convId];
     if (msgs == null) return;
@@ -480,7 +536,7 @@ class ChatService extends ChangeNotifier {
             : '-',
       };
     } catch (e) {
-      print('❌ 获取 Agent 状态失败: $e');
+      debugPrint('❌ 获取 Agent 状态失败: $e');
       return {'status': '查询失败'};
     }
   }
