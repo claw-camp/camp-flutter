@@ -136,6 +136,30 @@ class _ChatScreenState extends State<ChatScreen> {
     final reasoningMessage = chatService.reasoningMessages[convId];
     final isLoading = chatService.loading;
 
+    // 🔥 计算流式消息状态
+    final lastBotMessage = messages.isNotEmpty && messages.first.senderType == 'bot' 
+        ? messages.first 
+        : null;
+    final hasStreamingMessage = lastBotMessage != null && lastBotMessage.status == 'pending';
+    final streamingContent = hasStreamingMessage ? lastBotMessage.content : '';
+    
+    // 是否有任何活动状态（思考、工具调用、流式输出）
+    final hasAnyActiveState = statusMessage != null || 
+        reasoningMessage != null || 
+        hasStreamingMessage ||
+        chatService.thinkingMessages.isNotEmpty;
+    
+    // 是否只有思考状态（还没有内容）
+    final isThinkingOnly = !hasStreamingMessage && 
+        (statusMessage != null || reasoningMessage != null || chatService.thinkingMessages.isNotEmpty);
+    
+    // 流式是否仍在进行
+    final isStreamingActive = hasStreamingMessage || statusMessage != null || reasoningMessage != null;
+    
+    // 🔥 计算合并气泡需要的属性
+    final hasActiveStreaming = hasAnyActiveState;
+    final isStreamingActive_ = hasStreamingMessage;
+
     final botId = widget.conversation.botId;
     var cachedStatus = chatService.agentStatus[botId];
 
@@ -288,50 +312,23 @@ class _ChatScreenState extends State<ChatScreen> {
                                 vertical: 16,
                               ),
                               itemCount: messages.length +
-                                  (statusMessage != null ? 1 : 0) +
-                                  (reasoningMessage != null ? 1 : 0) +
-                                  (chatService.thinkingMessages.isNotEmpty ? 1 : 0),
+                                  (hasActiveStreaming ? 1 : 0),
                               itemBuilder: (context, i) {
-                                var extraIndex = 0;
-
-                                if (statusMessage != null && i == extraIndex) {
+                                // 🔥 合并所有活动状态为一个气泡
+                                if (hasActiveStreaming && i == 0) {
                                   return Padding(
                                     padding: const EdgeInsets.only(bottom: 12),
-                                    child: StatusBubble(
-                                      text: (statusMessage['text'] ?? '').toString(),
-                                      state: (statusMessage['state'] ?? 'working').toString(),
+                                    child: StreamingMessage(
+                                      content: streamingContent,
                                       botName: widget.conversation.name,
                                       botAvatar: widget.conversation.avatar,
+                                      isStreaming: isStreamingActive_,
+                                      isThinking: isThinkingOnly,
                                     ),
                                   );
                                 }
-                                if (statusMessage != null) extraIndex++;
 
-                                if (reasoningMessage != null && i == extraIndex) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: ReasoningBubble(
-                                      text: (reasoningMessage['text'] ?? '').toString(),
-                                      isComplete: (reasoningMessage['state'] ?? '') == 'complete',
-                                      botName: widget.conversation.name,
-                                      botAvatar: widget.conversation.avatar,
-                                    ),
-                                  );
-                                }
-                                if (reasoningMessage != null) extraIndex++;
-
-                                if (chatService.thinkingMessages.isNotEmpty && i == extraIndex) {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: ThinkingBubble(
-                                      botName: widget.conversation.name,
-                                      botAvatar: widget.conversation.avatar,
-                                    ),
-                                  );
-                                }
-                                if (chatService.thinkingMessages.isNotEmpty) extraIndex++;
-
-                                final msgIndex = i - extraIndex;
+                                final msgIndex = i - (hasActiveStreaming ? 1 : 0);
                                 if (msgIndex < 0 || msgIndex >= messages.length) {
                                   return const SizedBox.shrink();
                                 }
@@ -340,17 +337,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                 final reversedIndex = messages.length - 1 - msgIndex;
                                 final msg = messages[reversedIndex];
                                 
-                                // 流式消息（状态为 pending）
-                                if (msg.status == 'pending' && msg.senderType == 'bot') {
-                                  return Padding(
-                                    padding: const EdgeInsets.only(bottom: 12),
-                                    child: StreamingMessage(
-                                      content: msg.content,
-                                      botName: widget.conversation.name,
-                                      botAvatar: widget.conversation.avatar,
-                                      isStreaming: true,
-                                    ),
-                                  );
+                                // 🔥 跳过已经在合并气泡中显示的流式消息
+                                if (msg.status == 'pending' && msg.senderType == 'bot' && hasActiveStreaming) {
+                                  return const SizedBox.shrink();
                                 }
 
                                 // 普通消息

@@ -76,7 +76,7 @@ VERSION_JSON=$(cat <<EOF
   "downloadUrl": "$DOWNLOAD_URL",
   "latestUrl": "$LATEST_URL",
   "githubUrl": "$GITHUB_URL",
-  "releaseNotes": "修复流式消息显示问题，App 更名为龙虾营地",
+  "releaseNotes": "更新 App 图标为像素龙虾",
   "releaseDate": "$(date +%Y-%m-%d)",
   "minAndroidVersion": 21,
   "features": [
