@@ -199,6 +199,8 @@ class ChatService extends ChangeNotifier {
     final accumulatedContent = streamingMessages[tempMsgId] ?? '';
     final newContent = accumulatedContent + (chunk ?? '');
     streamingMessages[tempMsgId] = newContent;
+    
+    debugPrint('[msg_stream] 🔥 ACCUMULATED: chunk="$chunk", accumulated="$accumulatedContent", new="$newContent"');
 
     final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
     if (existingIdx >= 0) {
@@ -222,6 +224,8 @@ class ChatService extends ChangeNotifier {
     if (newContent.isNotEmpty) {
       _updateConversation(convId, newContent, DateTime.now(), incrementUnread: false);
     }
+    
+    debugPrint('[msg_stream] 🔥 NOTIFY: conv=$convId, msgCount=${messagesMap[convId]?.length}, lastContent="${newContent.substring(0, newContent.length > 50 ? 50 : newContent.length)}..."');
     notifyListeners();
   }
 
