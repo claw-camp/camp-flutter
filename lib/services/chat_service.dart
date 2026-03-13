@@ -234,14 +234,18 @@ class ChatService extends ChangeNotifier {
     final convId = (payload['conversationId'] ?? payload['conversation_id']) as String?;
     if (convId == null || convId.isEmpty) return;
 
+    final state = payload['statusState']?.toString() ?? 'working';
+    final text = payload['statusTask'] ?? payload['content'] ?? '';
+    
+    debugPrint('[status] 🔥 RECEIVED: conv=$convId, state=$state, text=$text');
+
     statusMessages[convId] = {
       'messageId': payload['message_id'] ?? payload['messageId'] ?? '',
-      'state': payload['statusState'] ?? 'working',
-      'text': payload['statusTask'] ?? payload['content'] ?? '',
+      'state': state,
+      'text': text,
       'updatedAt': DateTime.now(),
     };
 
-    final state = payload['statusState']?.toString() ?? '';
     if (state == 'complete' || state == 'error') {
       Future.delayed(const Duration(seconds: 2), () {
         if (statusMessages[convId]?['state'] == state) {
