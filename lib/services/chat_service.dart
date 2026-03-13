@@ -11,27 +11,30 @@ class ChatService extends ChangeNotifier {
   ApiService? _api;
   WebSocketService? _ws;
   String? _activeCampKey;
+  StreamSubscription? _wsSub;
+
+  // 当前正在查看的会话 ID（用于判断是否增加未读数）
+  String? _currentViewingConversationId;
 
   List<Conversation> conversations = [];
   Map<String, List<Message>> messagesMap = {};
   bool loading = false;
-  StreamSubscription? _wsSub;
 
-  // 新增：Agent 状态
+  // Agent 状态
   Map<String, Map<String, dynamic>> agentStatus = {};
-  // 新增：思考状态
+  // 思考状态
   Set<String> thinkingMessages = {};
-  // 新增：工作状态 / 思考文本（按会话保存）
+  // 工作状态 / 思考文本（按会话保存）
   Map<String, Map<String, dynamic>> statusMessages = {};
   Map<String, Map<String, dynamic>> reasoningMessages = {};
-  // 新增：流式消息缓存（临时）
-  Map<String, String> streamingMessages = {}; // messageId -> latest full content
+  // 流式消息缓存（临时）
+  Map<String, String> streamingMessages = {};
 
-  // 新增：分页状态
-  Map<String, bool> hasMoreMap = {}; // 每个会话是否还有更多消息
-  Map<String, bool> loadingMoreMap = {}; // 每个会话是否正在加载更多
-  static const int initialLimit = 10; // 初始加载 10 条
-  static const int loadMoreLimit = 20; // 加载更多 20 条
+  // 分页状态
+  Map<String, bool> hasMoreMap = {};
+  Map<String, bool> loadingMoreMap = {};
+  static const int initialLimit = 10;
+  static const int loadMoreLimit = 20;
 
   ChatService(this._auth) {
     if (_auth.campKey != null) _init();
@@ -66,7 +69,16 @@ class ChatService extends ChangeNotifier {
     if (campKey == null) return;
     _activeCampKey = campKey;
     _api = ApiService(campKey);
+    
+    // 🔥 关键修改：初始化时就连接 WebSocket
     loadConversations();
+    connectRealtime();
+  }
+
+  /// 设置当前正在查看的会话
+  void setCurrentViewingConversation(String? conversationId) {
+    _currentViewingConversationId = conversationId;
+    _ws?.watchConversation(conversationId);
   }
 
   void connectRealtime() {
@@ -75,6 +87,7 @@ class ChatService extends ChangeNotifier {
     _ws = WebSocketService(campKey);
     _ws!.connect();
     _wsSub = _ws!.stream.listen(_handleWsMessage);
+    debugPrint('✅ WebSocket 已连接');
   }
 
   void watchConversation(String? conversationId) {
@@ -86,6 +99,7 @@ class ChatService extends ChangeNotifier {
     _wsSub = null;
     _ws?.disconnect();
     _ws = null;
+    debugPrint('🔌 WebSocket 已断开');
   }
 
   void _handleWsMessage(Map<String, dynamic> msg) {
@@ -104,7 +118,7 @@ class ChatService extends ChangeNotifier {
         }
         break;
       case 'chat-stream':
-      case 'msg_stream': // 流式消息 chunk
+      case 'msg_stream':
         _handleMsgStream(payload);
         break;
       case 'msg_ack':
@@ -153,7 +167,6 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    // Hub 发来的 chunk 实际是“当前完整文本”，不是增量拼接
     final newContent = chunk ?? '';
     streamingMessages[tempMsgId] = newContent;
 
@@ -177,7 +190,7 @@ class ChatService extends ChangeNotifier {
     }
 
     if (newContent.isNotEmpty) {
-      _updateConversation(convId, newContent, DateTime.now());
+      _updateConversation(convId, newContent, DateTime.now(), incrementUnread: false);
     }
     notifyListeners();
   }
@@ -225,8 +238,7 @@ class ChatService extends ChangeNotifier {
   void _handleNewMessage(Map<String, dynamic>? payload) {
     if (payload == null) return;
 
-    final convId =
-        (payload['conversationId'] ?? payload['conversation_id']) as String?;
+    final convId = (payload['conversationId'] ?? payload['conversation_id']) as String?;
     if (convId == null || convId.isEmpty) return;
 
     final senderType = payload['senderType'] ?? payload['sender_type'] ?? 'bot';
@@ -250,7 +262,11 @@ class ChatService extends ChangeNotifier {
     }
 
     messagesMap[convId] = [...existingMessages, newMsg];
-    _updateConversation(convId, newMsg.content, newMsg.createdAt);
+    
+    // 🔥 关键修改：只有不在当前会话页时才增加未读数
+    final shouldIncrementUnread = _currentViewingConversationId != convId;
+    _updateConversation(convId, newMsg.content, newMsg.createdAt, incrementUnread: shouldIncrementUnread);
+    
     notifyListeners();
   }
 
@@ -297,7 +313,6 @@ class ChatService extends ChangeNotifier {
     thinkingMessages.add(msgId);
     notifyListeners();
 
-    // 30秒后自动清除思考状态
     Future.delayed(const Duration(seconds: 30), () {
       thinkingMessages.remove(msgId);
       notifyListeners();
@@ -311,7 +326,6 @@ class ChatService extends ChangeNotifier {
     final requestMsgId = payload['requestMessageId'] as String?;
     if (convId == null || msgId == null) return;
 
-    // 清除思考状态
     thinkingMessages.remove(msgId);
     if (requestMsgId != null) {
       thinkingMessages.remove(requestMsgId);
@@ -351,7 +365,8 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _updateConversation(String convId, String lastMsg, DateTime lastTime) {
+  /// 更新会话列表中的会话信息
+  void _updateConversation(String convId, String lastMsg, DateTime lastTime, {bool incrementUnread = true}) {
     final idx = conversations.indexWhere((c) => c.conversationId == convId);
     if (idx >= 0) {
       final old = conversations[idx];
@@ -361,7 +376,7 @@ class ChatService extends ChangeNotifier {
         type: old.type,
         name: old.name,
         avatar: old.avatar,
-        unreadCount: old.unreadCount + 1,
+        unreadCount: incrementUnread ? old.unreadCount + 1 : old.unreadCount,
         lastMessage: lastMsg,
         lastMessageAt: lastTime,
         botId: old.botId,
@@ -387,7 +402,6 @@ class ChatService extends ChangeNotifier {
     try {
       final msgs = await _api!.getMessages(conversationId, limit: initialLimit);
       messagesMap[conversationId] = msgs;
-      // 如果返回的消息数小于请求的数量，说明没有更多了
       hasMoreMap[conversationId] = msgs.length >= initialLimit;
     } catch (_) {
       messagesMap[conversationId] = [];
@@ -398,18 +412,14 @@ class ChatService extends ChangeNotifier {
     return messagesMap[conversationId] ?? [];
   }
 
-  /// 加载更多历史消息（往上翻）
   Future<void> loadMoreMessages(String conversationId) async {
     if (_api == null) return;
-
-    // 如果已经在加载或没有更多消息，直接返回
     if (loadingMoreMap[conversationId] == true) return;
     if (hasMoreMap[conversationId] == false) return;
 
     final existingMsgs = messagesMap[conversationId];
     if (existingMsgs == null || existingMsgs.isEmpty) return;
 
-    // 获取最早的消息 ID
     final oldestMsgId = existingMsgs.first.messageId;
     if (oldestMsgId.isEmpty) return;
 
@@ -424,17 +434,12 @@ class ChatService extends ChangeNotifier {
       );
 
       if (olderMsgs.isNotEmpty) {
-        // 将旧消息插入到前面
         messagesMap[conversationId] = [...olderMsgs, ...existingMsgs];
-        // 如果返回的消息数小于请求的数量，说明没有更多了
         hasMoreMap[conversationId] = olderMsgs.length >= loadMoreLimit;
       } else {
-        // 没有消息了
         hasMoreMap[conversationId] = false;
       }
-    } catch (_) {
-      // 加载失败，保持现有状态
-    }
+    } catch (_) {}
 
     loadingMoreMap[conversationId] = false;
     notifyListeners();
@@ -446,7 +451,6 @@ class ChatService extends ChangeNotifier {
     String? botId,
   }) async {
     if (_api == null) return;
-    // 先乐观插入
     final tmpId = 'tmp_${DateTime.now().millisecondsSinceEpoch}';
     final tmp = Message(
       messageId: tmpId,
@@ -467,7 +471,6 @@ class ChatService extends ChangeNotifier {
         botId: botId,
       );
 
-      // 用返回的真实 messageId 更新临时消息
       final messageData = result['message'] as Map<String, dynamic>?;
       final realId = messageData?['message_id'] as String?;
       if (realId != null && realId != tmpId) {
@@ -484,7 +487,6 @@ class ChatService extends ChangeNotifier {
         }
       }
     } catch (_) {
-      // 发送失败，更新状态
       final msgs = messagesMap[conversationId];
       if (msgs != null) {
         final idx = msgs.indexWhere((m) => m.messageId == tmpId);
@@ -501,8 +503,9 @@ class ChatService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 标记会话为已读（清除本地未读数量）
-  void markConversationAsRead(String conversationId) {
+  /// 标记会话为已读
+  Future<void> markConversationAsRead(String conversationId) async {
+    // 先立即更新本地状态
     final idx = conversations.indexWhere((c) => c.conversationId == conversationId);
     if (idx >= 0 && conversations[idx].unreadCount > 0) {
       conversations[idx] = Conversation(
@@ -511,20 +514,27 @@ class ChatService extends ChangeNotifier {
         type: conversations[idx].type,
         name: conversations[idx].name,
         avatar: conversations[idx].avatar,
-        unreadCount: 0, // 清除未读数量
+        unreadCount: 0,
         lastMessage: conversations[idx].lastMessage,
         lastMessageAt: conversations[idx].lastMessageAt,
         botId: conversations[idx].botId,
       );
       notifyListeners();
     }
-    // 后端会在 loadMessages 时自动更新 last_read_at
+
+    // 🔥 调用后端 API 标记已读
+    if (_api != null) {
+      try {
+        await _api!.markConversationAsRead(conversationId);
+        debugPrint('✅ 会话已标记为已读: $conversationId');
+      } catch (e) {
+        debugPrint('❌ 标记已读失败: $e');
+      }
+    }
   }
 
   Future<Map<String, dynamic>> getAgentStatus(String? botId) async {
     if (botId == null) return {'status': '未知'};
-    
-    // 🔥 移除缓存，每次都实时查询
     if (_api == null) return {'status': '未知'};
     try {
       final agents = await _api!.getAgents();
@@ -538,9 +548,7 @@ class ChatService extends ChangeNotifier {
         'model': agent['gateway']?['model'],
         'sessions': (agent['sessions'] as List?)?.length ?? 0,
         'lastSeen': lastSeen != null
-            ? DateTime.fromMillisecondsSinceEpoch(
-                lastSeen,
-              ).toString().substring(0, 19)
+            ? DateTime.fromMillisecondsSinceEpoch(lastSeen).toString().substring(0, 19)
             : '-',
       };
     } catch (e) {

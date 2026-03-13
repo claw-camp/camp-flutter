@@ -113,14 +113,18 @@ class _ConversationsScreenState extends State<ConversationsScreen> {
                             final conv = conversations[i];
                             return ConversationTile(
                               conversation: conv,
-                              onTap: () {
-                                Navigator.push(
+                              onTap: () async {
+                                await Navigator.push(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) =>
                                         ChatScreen(conversation: conv),
                                   ),
                                 );
+                                // 🔥 返回时刷新会话列表
+                                if (context.mounted) {
+                                  chatService.loadConversations();
+                                }
                               },
                             );
                           },

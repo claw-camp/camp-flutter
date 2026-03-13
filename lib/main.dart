@@ -25,8 +25,48 @@ void main() async {
   );
 }
 
-class CampApp extends StatelessWidget {
+class CampApp extends StatefulWidget {
   const CampApp({super.key});
+
+  @override
+  State<CampApp> createState() => _CampAppState();
+}
+
+class _CampAppState extends State<CampApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final chatService = context.read<ChatService?>();
+    if (chatService == null) return;
+
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // 前台：恢复完整连接，刷新数据
+        chatService.connectRealtime();
+        chatService.loadConversations();
+        break;
+      case AppLifecycleState.paused:
+        // 后台：保持连接但降低频率（不断开）
+        break;
+      case AppLifecycleState.detached:
+        // 完全退出：断开连接
+        chatService.disconnectRealtime();
+        break;
+      default:
+        break;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

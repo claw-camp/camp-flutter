@@ -29,13 +29,21 @@ class _ChatScreenState extends State<ChatScreen> {
     _chatService = context.read<ChatService>();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _chatService.connectRealtime();
-      _chatService.watchConversation(widget.conversation.conversationId);
+      // 🔥 使用新方法设置当前查看的会话
+      _chatService.setCurrentViewingConversation(widget.conversation.conversationId);
       _chatService.loadMessages(widget.conversation.conversationId);
-      // 进入聊天时，立即清除未读数量
       _chatService.markConversationAsRead(widget.conversation.conversationId);
       _loadAgentStatus();
     });
+  }
+
+  @override
+  void dispose() {
+    // 🔥 离开聊天页时清除当前查看的会话
+    _chatService.setCurrentViewingConversation(null);
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _onScroll() {
@@ -117,16 +125,6 @@ class _ChatScreenState extends State<ChatScreen> {
           botId: widget.conversation.botId,
         );
     }
-  }
-
-  @override
-  void dispose() {
-    _chatService.watchConversation(null);
-    _chatService.disconnectRealtime();
-    _controller.dispose();
-    _scrollController.removeListener(_onScroll);
-    _scrollController.dispose();
-    super.dispose();
   }
 
   @override

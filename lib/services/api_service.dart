@@ -74,4 +74,15 @@ class ApiService {
     }
     return [];
   }
+
+  /// 标记会话为已读
+  Future<void> markConversationAsRead(String conversationId) async {
+    final res = await http.post(
+      Uri.parse('$_baseUrl/api/chat/conversations/$conversationId/read'),
+      headers: _headers,
+    );
+    if (res.statusCode != 200) {
+      throw Exception('标记已读失败: ${res.body}');
+    }
+  }
 }
