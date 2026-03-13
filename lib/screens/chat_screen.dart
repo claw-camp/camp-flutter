@@ -30,6 +30,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _chatService.connectRealtime();
+      _chatService.watchConversation(widget.conversation.conversationId);
       _chatService.loadMessages(widget.conversation.conversationId);
       // 进入聊天时，立即清除未读数量
       _chatService.markConversationAsRead(widget.conversation.conversationId);
@@ -120,6 +121,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _chatService.watchConversation(null);
     _chatService.disconnectRealtime();
     _controller.dispose();
     _scrollController.removeListener(_onScroll);

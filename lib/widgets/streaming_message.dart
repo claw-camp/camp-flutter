@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
-/// 流式消息气泡 - 支持逐字打印效果
+/// 流式消息气泡 - 支持逐字打印效果 + Markdown 渲染 + 文字复制
 class StreamingMessage extends StatefulWidget {
   final String content;
   final String botName;
@@ -95,78 +97,157 @@ class _StreamingMessageState extends State<StreamingMessage>
     super.dispose();
   }
 
+  // 复制文本到剪贴板
+  void _copyText(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已复制到剪贴板'),
+        duration: Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // 判断是否包含 Markdown 语法
+  bool _hasMarkdown(String text) {
+    final mdPatterns = [
+      RegExp(r'\*\*.*?\*\*'),
+      RegExp(r'\*.*?\*'),
+      RegExp(r'`[^`]+`'),
+      RegExp(r'```[\s\S]*?```'),
+      RegExp(r'^#+\s', multiLine: true),
+      RegExp(r'^[-*+]\s', multiLine: true),
+      RegExp(r'^\d+\.\s', multiLine: true),
+      RegExp(r'\[.*?\]\(.*?\)'),
+      RegExp(r'^>\s', multiLine: true),
+    ];
+    return mdPatterns.any((p) => p.hasMatch(text));
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Avatar
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: const Color(0xFFE53935),
-          backgroundImage: widget.botAvatar != null
-              ? NetworkImage(widget.botAvatar!)
-              : null,
-          child: widget.botAvatar == null
-              ? Text(
-                  widget.botName.isNotEmpty
-                      ? widget.botName[0].toUpperCase()
-                      : 'B',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+    final hasMd = _hasMarkdown(_displayText);
+    final isComplete = !widget.isStreaming || _charIndex >= widget.content.length;
+
+    return GestureDetector(
+      onLongPress: () => _copyText(context, _displayText),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar
+          CircleAvatar(
+            radius: 16,
+            backgroundColor: const Color(0xFFE53935),
+            backgroundImage: widget.botAvatar != null
+                ? NetworkImage(widget.botAvatar!)
+                : null,
+            child: widget.botAvatar == null
+                ? Text(
+                    widget.botName.isNotEmpty
+                        ? widget.botName[0].toUpperCase()
+                        : 'B',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  )
+                : null,
+          ),
+          const SizedBox(width: 8),
+          // Message bubble
+          Flexible(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(10),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
                   ),
-                )
-              : null,
-        ),
-        const SizedBox(width: 8),
-        // Message bubble
-        Flexible(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withAlpha(10),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _displayText,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    height: 1.4,
-                    color: Color(0xFF333333),
-                  ),
-                ),
-                // Breathing cursor
-                if (widget.isStreaming && _charIndex < widget.content.length)
-                  FadeTransition(
-                    opacity: _breathingAnimation,
-                    child: Container(
-                      width: 2,
-                      height: 16,
-                      margin: const EdgeInsets.only(top: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE53935),
-                        borderRadius: BorderRadius.circular(1),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 流式完成后渲染 Markdown，否则普通文本
+                  if (hasMd && isComplete)
+                    MarkdownBody(
+                      data: _displayText,
+                      selectable: true,
+                      styleSheet: MarkdownStyleSheet(
+                        p: const TextStyle(
+                          fontSize: 15,
+                          height: 1.4,
+                          color: Color(0xFF333333),
+                        ),
+                        code: TextStyle(
+                          backgroundColor: Colors.grey[200],
+                          color: const Color(0xFFE53935),
+                          fontSize: 14,
+                          fontFamily: 'monospace',
+                        ),
+                        codeblockDecoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        codeblockPadding: const EdgeInsets.all(12),
+                        blockquote: TextStyle(
+                          color: Colors.grey[700],
+                          fontStyle: FontStyle.italic,
+                        ),
+                        listBullet: const TextStyle(color: Color(0xFF333333)),
+                        h1: const TextStyle(
+                          color: Color(0xFF333333),
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        h2: const TextStyle(
+                          color: Color(0xFF333333),
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        h3: const TextStyle(
+                          color: Color(0xFF333333),
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      _displayText,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        height: 1.4,
+                        color: Color(0xFF333333),
                       ),
                     ),
-                  ),
-              ],
+                  // Breathing cursor
+                  if (widget.isStreaming && _charIndex < widget.content.length)
+                    FadeTransition(
+                      opacity: _breathingAnimation,
+                      child: Container(
+                        width: 2,
+                        height: 16,
+                        margin: const EdgeInsets.only(top: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE53935),
+                          borderRadius: BorderRadius.circular(1),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -401,7 +482,6 @@ class _ThinkingBubbleState extends State<ThinkingBubble>
               return Row(
                 mainAxisSize: MainAxisSize.min,
                 children: List.generate(3, (index) {
-                  // 三个点依次闪烁
                   final delay = index * 0.33;
                   final value = (_controller.value + delay) % 1.0;
                   final scale = 0.5 + (value < 0.5 ? value * 2 : (1 - value) * 2) * 0.5;

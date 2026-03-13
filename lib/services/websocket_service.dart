@@ -6,6 +6,7 @@ class WebSocketService {
   static const _wsUrl = 'ws://119.91.123.2:8889';
 
   WebSocketChannel? _channel;
+  String? _activeConversationId;
   final StreamController<Map<String, dynamic>> _controller =
       StreamController<Map<String, dynamic>>.broadcast();
   final String campKey;
@@ -25,6 +26,12 @@ class WebSocketService {
     _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
 
     _channel!.sink.add(jsonEncode({'type': 'subscribe', 'campKey': campKey}));
+    if (_activeConversationId != null) {
+      _channel!.sink.add(jsonEncode({
+        'type': 'watch-conversation',
+        'conversationId': _activeConversationId,
+      }));
+    }
 
     _channelSubscription = _channel!.stream.listen(
       (data) {
@@ -49,6 +56,17 @@ class WebSocketService {
     _disposeChannel();
     if (_manuallyDisconnected) return;
     Future.delayed(const Duration(seconds: 3), connect);
+  }
+
+  void watchConversation(String? conversationId) {
+    _activeConversationId = conversationId;
+    final channel = _channel;
+    if (channel != null) {
+      channel.sink.add(jsonEncode({
+        'type': 'watch-conversation',
+        'conversationId': conversationId,
+      }));
+    }
   }
 
   void disconnect() {

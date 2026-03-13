@@ -77,6 +77,10 @@ class ChatService extends ChangeNotifier {
     _wsSub = _ws!.stream.listen(_handleWsMessage);
   }
 
+  void watchConversation(String? conversationId) {
+    _ws?.watchConversation(conversationId);
+  }
+
   void disconnectRealtime() {
     _wsSub?.cancel();
     _wsSub = null;
@@ -304,10 +308,14 @@ class ChatService extends ChangeNotifier {
     if (payload == null) return;
     final convId = payload['conversationId'] as String?;
     final msgId = payload['messageId'] as String?;
+    final requestMsgId = payload['requestMessageId'] as String?;
     if (convId == null || msgId == null) return;
 
     // 清除思考状态
     thinkingMessages.remove(msgId);
+    if (requestMsgId != null) {
+      thinkingMessages.remove(requestMsgId);
+    }
     statusMessages.remove(convId);
 
     final msgs = messagesMap[convId];

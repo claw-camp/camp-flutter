@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import '../models/message.dart';
 
 class MessageBubble extends StatelessWidget {
@@ -60,9 +62,42 @@ class MessageBubble extends StatelessWidget {
     return '$hour:$minute';
   }
 
+  // 复制文本到剪贴板
+  void _copyText(BuildContext context, String text) {
+    Clipboard.setData(ClipboardData(text: text));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('已复制到剪贴板'),
+        duration: Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  // 判断是否包含 Markdown 语法
+  bool _hasMarkdown(String text) {
+    // 检测常见的 Markdown 语法
+    final mdPatterns = [
+      RegExp(r'\*\*.*?\*\*'),      // **bold**
+      RegExp(r'\*.*?\*'),          // *italic*
+      RegExp(r'`[^`]+`'),          // `code`
+      RegExp(r'```[\s\S]*?```'),   // ```code block```
+      RegExp(r'^#+\s', multiLine: true),  // # headers
+      RegExp(r'^[-*+]\s', multiLine: true), // - list
+      RegExp(r'^\d+\.\s', multiLine: true), // 1. list
+      RegExp(r'\[.*?\]\(.*?\)'),   // [link](url)
+      RegExp(r'^>\s', multiLine: true),    // > quote
+    ];
+    
+    return mdPatterns.any((p) => p.hasMatch(text));
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUser = message.isFromMe;
+    final hasMd = _hasMarkdown(message.content);
+    final textColor = isUser ? Colors.white : const Color(0xFF333333);
+    final bgColor = isUser ? const Color(0xFFE53935) : Colors.white;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -96,34 +131,85 @@ class MessageBubble extends StatelessWidget {
                   ? CrossAxisAlignment.end 
                   : CrossAxisAlignment.start,
               children: [
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.72,
-                  ),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: isUser ? const Color(0xFFE53935) : Colors.white,
-                    borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isUser ? 16 : 4),
-                      bottomRight: Radius.circular(isUser ? 4 : 16),
+                GestureDetector(
+                  onLongPress: () => _copyText(context, message.content),
+                  child: Container(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.72,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(8),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: bgColor,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16),
+                        topRight: const Radius.circular(16),
+                        bottomLeft: Radius.circular(isUser ? 16 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 16),
                       ),
-                    ],
-                  ),
-                  child: Text(
-                    message.content,
-                    style: TextStyle(
-                      color: isUser ? Colors.white : const Color(0xFF333333),
-                      fontSize: 15,
-                      height: 1.4,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withAlpha(8),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
                     ),
+                    child: hasMd && !isUser
+                        ? MarkdownBody(
+                            data: message.content,
+                            selectable: true,
+                            styleSheet: MarkdownStyleSheet(
+                              p: TextStyle(
+                                color: textColor,
+                                fontSize: 15,
+                                height: 1.4,
+                              ),
+                              code: TextStyle(
+                                backgroundColor: Colors.grey[200],
+                                color: const Color(0xFFE53935),
+                                fontSize: 14,
+                                fontFamily: 'monospace',
+                              ),
+                              codeblockDecoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              codeblockPadding: const EdgeInsets.all(12),
+                              blockquote: TextStyle(
+                                color: textColor.withAlpha(180),
+                                fontStyle: FontStyle.italic,
+                              ),
+                              listBullet: TextStyle(color: textColor),
+                              h1: TextStyle(
+                                color: textColor,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              h2: TextStyle(
+                                color: textColor,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              h3: TextStyle(
+                                color: textColor,
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            onTapLink: (text, href, title) {
+                              if (href != null) {
+                                // 可以用 url_launcher 打开链接
+                              }
+                            },
+                          )
+                        : SelectableText(
+                            message.content,
+                            style: TextStyle(
+                              color: textColor,
+                              fontSize: 15,
+                              height: 1.4,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 4),
