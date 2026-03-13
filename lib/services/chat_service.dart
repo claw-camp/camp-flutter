@@ -177,7 +177,8 @@ class ChatService extends ChangeNotifier {
       if (completeMessage != null) {
         finalContent = completeMessage['content'] as String? ?? '';
       } else {
-        finalContent = chunk ?? streamingMessages[tempMsgId] ?? '';
+        // 🔥 累积所有 chunk 内容
+        finalContent = streamingMessages[tempMsgId] ?? '';
       }
       
       if (finalContent.isNotEmpty) {
@@ -194,7 +195,9 @@ class ChatService extends ChangeNotifier {
       return;
     }
 
-    final newContent = chunk ?? '';
+    // 🔥 累积 chunk 内容而不是覆盖
+    final accumulatedContent = streamingMessages[tempMsgId] ?? '';
+    final newContent = accumulatedContent + (chunk ?? '');
     streamingMessages[tempMsgId] = newContent;
 
     final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
