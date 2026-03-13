@@ -5,16 +5,20 @@ import '../models/message.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 import 'websocket_service.dart';
+import 'notification_service.dart';
 
 class ChatService extends ChangeNotifier {
   final AuthService _auth;
+  final NotificationService _notification = NotificationService();
   ApiService? _api;
   WebSocketService? _ws;
   String? _activeCampKey;
   StreamSubscription? _wsSub;
 
-  // 当前正在查看的会话 ID（用于判断是否增加未读数）
+  // 当前正在查看的会话 ID
   String? _currentViewingConversationId;
+  // App 是否在前台
+  bool _isAppInForeground = true;
 
   List<Conversation> conversations = [];
   Map<String, List<Message>> messagesMap = {};
@@ -79,6 +83,11 @@ class ChatService extends ChangeNotifier {
   void setCurrentViewingConversation(String? conversationId) {
     _currentViewingConversationId = conversationId;
     _ws?.watchConversation(conversationId);
+  }
+
+  /// 设置 App 前台/后台状态
+  void setAppForeground(bool isForeground) {
+    _isAppInForeground = isForeground;
   }
 
   void connectRealtime() {
@@ -263,11 +272,39 @@ class ChatService extends ChangeNotifier {
 
     messagesMap[convId] = [...existingMessages, newMsg];
     
-    // 🔥 关键修改：只有不在当前会话页时才增加未读数
+    // 🔥 关键修改：只有不在当前会话页时才增加未读数并发送通知
     final shouldIncrementUnread = _currentViewingConversationId != convId;
     _updateConversation(convId, newMsg.content, newMsg.createdAt, incrementUnread: shouldIncrementUnread);
     
+    // 🔥 发送本地通知
+    if (shouldIncrementUnread || !_isAppInForeground) {
+      _sendNotification(convId, newMsg.content);
+    }
+    
     notifyListeners();
+  }
+
+  void _sendNotification(String convId, String content) async {
+    // 获取会话名称
+    final conv = conversations.firstWhere(
+      (c) => c.conversationId == convId,
+      orElse: () => Conversation(
+        id: 0,
+        conversationId: convId,
+        type: 'bot',
+        name: '消息',
+      ),
+    );
+    
+    // 截取内容预览
+    final preview = content.length > 50 ? '${content.substring(0, 50)}...' : content;
+    
+    await _notification.show(
+      id: convId.hashCode,
+      title: conv.name,
+      body: preview,
+      payload: convId,
+    );
   }
 
   void _handleMsgAck(Map<String, dynamic>? payload) {

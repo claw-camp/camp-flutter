@@ -2,11 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'services/auth_service.dart';
 import 'services/chat_service.dart';
+import 'services/notification_service.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化通知服务
+  await NotificationService().init();
 
   final authService = AuthService();
   await authService.init();
@@ -53,11 +57,13 @@ class _CampAppState extends State<CampApp> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         // 前台：恢复完整连接，刷新数据
+        chatService.setAppForeground(true);
         chatService.connectRealtime();
         chatService.loadConversations();
         break;
       case AppLifecycleState.paused:
-        // 后台：保持连接但降低频率（不断开）
+        // 后台：保持连接，标记为后台状态
+        chatService.setAppForeground(false);
         break;
       case AppLifecycleState.detached:
         // 完全退出：断开连接
