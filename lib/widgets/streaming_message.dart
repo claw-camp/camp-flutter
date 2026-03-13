@@ -60,50 +60,27 @@ class _StreamingMessageState extends State<StreamingMessage>
       CurvedAnimation(parent: _dotsController, curve: Curves.easeInOut),
     );
     
-    if (widget.isStreaming && widget.content.isNotEmpty) {
-      _startStreaming();
-    } else {
-      _displayText = widget.content;
-    }
+    // 🔥 直接设置显示内容
+    _displayText = widget.content;
+    _charIndex = widget.content.length;
   }
 
   @override
   void didUpdateWidget(StreamingMessage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 🔥 直接更新显示内容，不做额外的流式效果
+    // 因为 Gateway 已经在发送增量内容了
     if (oldWidget.content != widget.content) {
-      if (widget.isStreaming) {
-        _startStreaming();
-      } else {
-        setState(() {
-          _displayText = widget.content;
-          _charIndex = widget.content.length;
-        });
+      setState(() {
+        _displayText = widget.content;
+        _charIndex = widget.content.length;
+      });
+      
+      // 如果流式结束，调用回调
+      if (!widget.isStreaming && widget.onComplete != null) {
+        widget.onComplete!();
       }
     }
-  }
-
-  void _startStreaming() {
-    _timer?.cancel();
-
-    if (_displayText.isNotEmpty && widget.content.startsWith(_displayText)) {
-      _charIndex = _displayText.length;
-    } else {
-      _charIndex = 0;
-      _displayText = '';
-    }
-
-    _timer = Timer.periodic(const Duration(milliseconds: 16), (timer) {
-      if (_charIndex < widget.content.length) {
-        final step = (widget.content.length - _charIndex) > 12 ? 3 : 1;
-        setState(() {
-          _charIndex = (_charIndex + step).clamp(0, widget.content.length);
-          _displayText = widget.content.substring(0, _charIndex);
-        });
-      } else {
-        timer.cancel();
-        widget.onComplete?.call();
-      }
-    });
   }
 
   @override
