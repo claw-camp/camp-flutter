@@ -314,11 +314,13 @@ class _ChatScreenState extends State<ChatScreen> {
                               itemCount: messages.length +
                                   (hasActiveStreaming ? 1 : 0),
                               itemBuilder: (context, i) {
-                                // 🔥 合并所有活动状态为一个气泡
+                                // 🔥 合并所有活动状态为一个气泡（使用稳定的 key）
                                 if (hasActiveStreaming && i == 0) {
                                   return Padding(
+                                    key: const ValueKey('streaming-message'),
                                     padding: const EdgeInsets.only(bottom: 12),
                                     child: StreamingMessage(
+                                      key: ValueKey('stream-${widget.conversation.conversationId}'),
                                       content: streamingContent,
                                       botName: widget.conversation.name,
                                       botAvatar: widget.conversation.avatar,
@@ -342,10 +344,12 @@ class _ChatScreenState extends State<ChatScreen> {
                                   return const SizedBox.shrink();
                                 }
 
-                                // 普通消息
+                                // 普通消息（使用稳定的 key）
                                 return Padding(
+                                  key: ValueKey(msg.messageId),
                                   padding: const EdgeInsets.only(bottom: 12),
                                   child: MessageBubble(
+                                    key: ValueKey('msg-${msg.messageId}'),
                                     message: msg,
                                     botName: widget.conversation.name,
                                     botAvatar: widget.conversation.avatar,
