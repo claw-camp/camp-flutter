@@ -93,8 +93,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _showUpdateDialog(Map<String, dynamic> data) {
     final latest = data['version'] as String? ?? '';
     final notes = data['releaseNotes'] as String?;
-    final downloadUrl = data['downloadUrl'] as String? ??
-        '${AppConstants.apiBaseUrl}/camp-flutter-latest.apk';
+    // 🔥 修复：优先使用服务器返回的 URL，否则使用 COS 地址
+    final downloadUrl = data['downloadUrl'] as String? ?? 
+        'https://release.camp.aigc.sx.cn/releases/app-release.apk';
 
     showDialog(
       context: context,
