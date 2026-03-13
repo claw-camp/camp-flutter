@@ -163,13 +163,23 @@ class ChatService extends ChangeNotifier {
     final tempMsgId = payload['messageId'] as String?;
     final chunk = payload['chunk'] as String?;
     final isDone = payload['isDone'] as bool? ?? false;
+    final completeMessage = payload['message'] as Map<String, dynamic>?;
+
+    debugPrint('[msg_stream] conv=$convId, msg=$tempMsgId, done=$isDone, hasMsg=${completeMessage != null}');
 
     if (convId == null || tempMsgId == null) return;
 
     final existingMessages = messagesMap[convId] ?? [];
 
     if (isDone) {
-      final finalContent = chunk ?? streamingMessages[tempMsgId] ?? '';
+      // 🔥 优先使用完整消息（来自数据库）
+      String finalContent;
+      if (completeMessage != null) {
+        finalContent = completeMessage['content'] as String? ?? '';
+      } else {
+        finalContent = chunk ?? streamingMessages[tempMsgId] ?? '';
+      }
+      
       if (finalContent.isNotEmpty) {
         final existingIdx = existingMessages.indexWhere((m) => m.messageId == tempMsgId);
         if (existingIdx >= 0) {
