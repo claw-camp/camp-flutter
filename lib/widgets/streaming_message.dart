@@ -3,12 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
-/// 流式消息气泡 - 支持逐字打印效果 + Markdown 渲染 + 文字复制
+/// 流式消息气泡 - 支持逐字打印效果 + Markdown 渲染 + 思考动画 + 文字复制
 class StreamingMessage extends StatefulWidget {
   final String content;
   final String botName;
   final String? botAvatar;
   final bool isStreaming;
+  final bool isThinking; // 🔥 是否在思考中（还没有内容）
   final VoidCallback? onComplete;
 
   const StreamingMessage({
@@ -17,6 +18,7 @@ class StreamingMessage extends StatefulWidget {
     required this.botName,
     this.botAvatar,
     this.isStreaming = true,
+    this.isThinking = false,
     this.onComplete,
   });
 
@@ -25,16 +27,20 @@ class StreamingMessage extends StatefulWidget {
 }
 
 class _StreamingMessageState extends State<StreamingMessage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   String _displayText = '';
   int _charIndex = 0;
   Timer? _timer;
   late AnimationController _breathingController;
   late Animation<double> _breathingAnimation;
+  late AnimationController _dotsController;
+  late Animation<int> _dotsAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // 呼吸动画（用于光标）
     _breathingController = AnimationController(
       duration: const Duration(milliseconds: 1500),
       vsync: this,
@@ -42,6 +48,16 @@ class _StreamingMessageState extends State<StreamingMessage>
     
     _breathingAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
       CurvedAnimation(parent: _breathingController, curve: Curves.easeInOut),
+    );
+    
+    // 思考动画（三个点）
+    _dotsController = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    )..repeat();
+    
+    _dotsAnimation = IntTween(begin: 1, end: 3).animate(
+      CurvedAnimation(parent: _dotsController, curve: Curves.easeInOut),
     );
     
     if (widget.isStreaming && widget.content.isNotEmpty) {
@@ -94,6 +110,7 @@ class _StreamingMessageState extends State<StreamingMessage>
   void dispose() {
     _timer?.cancel();
     _breathingController.dispose();
+    _dotsController.dispose();
     super.dispose();
   }
 
@@ -127,8 +144,9 @@ class _StreamingMessageState extends State<StreamingMessage>
 
   @override
   Widget build(BuildContext context) {
-    final hasMd = _hasMarkdown(_displayText);
-    final isComplete = !widget.isStreaming || _charIndex >= widget.content.length;
+    final hasContent = _displayText.isNotEmpty;
+    final hasMd = hasContent && _hasMarkdown(_displayText);
+    final showThinking = widget.isThinking || (widget.isStreaming && !hasContent);
 
     return GestureDetector(
       onLongPress: () => _copyText(context, _displayText),
@@ -160,6 +178,9 @@ class _StreamingMessageState extends State<StreamingMessage>
           // Message bubble
           Flexible(
             child: Container(
+              constraints: BoxConstraints(
+                minHeight: showThinking ? 60 : 0,
+              ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -174,73 +195,67 @@ class _StreamingMessageState extends State<StreamingMessage>
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 流式完成后渲染 Markdown，否则普通文本
-                  if (hasMd && isComplete)
-                    MarkdownBody(
-                      data: _displayText,
-                      selectable: true,
-                      styleSheet: MarkdownStyleSheet(
-                        p: const TextStyle(
-                          fontSize: 15,
-                          height: 1.4,
-                          color: Color(0xFF333333),
-                        ),
-                        code: TextStyle(
-                          backgroundColor: Colors.grey[200],
-                          color: const Color(0xFFE53935),
-                          fontSize: 14,
-                          fontFamily: 'monospace',
-                        ),
-                        codeblockDecoration: BoxDecoration(
-                          color: Colors.grey[100],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        codeblockPadding: const EdgeInsets.all(12),
-                        blockquote: TextStyle(
-                          color: Colors.grey[700],
-                          fontStyle: FontStyle.italic,
-                        ),
-                        listBullet: const TextStyle(color: Color(0xFF333333)),
-                        h1: const TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        h2: const TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        h3: const TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  else
-                    Text(
-                      _displayText,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        height: 1.4,
-                        color: Color(0xFF333333),
-                      ),
-                    ),
-                  // Breathing cursor
-                  if (widget.isStreaming && _charIndex < widget.content.length)
-                    FadeTransition(
-                      opacity: _breathingAnimation,
-                      child: Container(
-                        width: 2,
-                        height: 16,
-                        margin: const EdgeInsets.only(top: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE53935),
-                          borderRadius: BorderRadius.circular(1),
-                        ),
-                      ),
+                  // 内容区域
+                  if (hasContent)
+                    hasMd && !widget.isStreaming
+                        ? MarkdownBody(
+                            data: _displayText,
+                            selectable: true,
+                            styleSheet: MarkdownStyleSheet(
+                              p: const TextStyle(
+                                fontSize: 15,
+                                height: 1.4,
+                                color: Color(0xFF333333),
+                              ),
+                              code: TextStyle(
+                                backgroundColor: Colors.grey[200],
+                                color: const Color(0xFFE53935),
+                                fontSize: 14,
+                                fontFamily: 'monospace',
+                              ),
+                              codeblockDecoration: BoxDecoration(
+                                color: Colors.grey[100],
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              codeblockPadding: const EdgeInsets.all(12),
+                              blockquote: TextStyle(
+                                color: Colors.grey[700],
+                                fontStyle: FontStyle.italic,
+                              ),
+                              listBullet: const TextStyle(color: Color(0xFF333333)),
+                              h1: const TextStyle(
+                                color: Color(0xFF333333),
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              h2: const TextStyle(
+                                color: Color(0xFF333333),
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              h3: const TextStyle(
+                                color: Color(0xFF333333),
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          )
+                        : Text(
+                            _displayText,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.4,
+                              color: Color(0xFF333333),
+                            ),
+                          ),
+                  
+                  // 思考动画（在底部）
+                  if (showThinking || (widget.isStreaming && _charIndex < widget.content.length))
+                    Padding(
+                      padding: EdgeInsets.only(top: hasContent ? 8 : 0),
+                      child: _buildThinkingIndicator(),
                     ),
                 ],
               ),
@@ -250,9 +265,50 @@ class _StreamingMessageState extends State<StreamingMessage>
       ),
     );
   }
+
+  Widget _buildThinkingIndicator() {
+    return AnimatedBuilder(
+      animation: _dotsController,
+      builder: (context, child) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              widget.isThinking ? '思考中' : '',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey[500],
+              ),
+            ),
+            if (widget.isThinking) const SizedBox(width: 4),
+            ...List.generate(3, (index) {
+              final delay = index * 0.33;
+              final value = (_dotsController.value + delay) % 1.0;
+              final scale = 0.5 + (value < 0.5 ? value * 2 : (1 - value) * 2) * 0.5;
+              
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                child: Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
 }
 
-/// 思考状态气泡 - 三个点呼吸动效
+/// 状态气泡
 class StatusBubble extends StatelessWidget {
   final String text;
   final String state;
@@ -329,6 +385,24 @@ class StatusBubble extends StatelessWidget {
   }
 }
 
+/// 思考气泡（已废弃，保留兼容）
+class ThinkingBubble extends StatelessWidget {
+  final String botName;
+  final String? botAvatar;
+
+  const ThinkingBubble({
+    super.key,
+    required this.botName,
+    this.botAvatar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox.shrink(); // 不再显示单独的思考气泡
+  }
+}
+
+/// 推理气泡
 class ReasoningBubble extends StatelessWidget {
   final String text;
   final bool isComplete;
@@ -397,112 +471,6 @@ class ReasoningBubble extends StatelessWidget {
                 ],
               ],
             ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class ThinkingBubble extends StatefulWidget {
-  final String botName;
-  final String? botAvatar;
-
-  const ThinkingBubble({
-    super.key,
-    required this.botName,
-    this.botAvatar,
-  });
-
-  @override
-  State<ThinkingBubble> createState() => _ThinkingBubbleState();
-}
-
-class _ThinkingBubbleState extends State<ThinkingBubble>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 1200),
-      vsync: this,
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        CircleAvatar(
-          radius: 16,
-          backgroundColor: const Color(0xFFE53935),
-          backgroundImage: widget.botAvatar != null
-              ? NetworkImage(widget.botAvatar!)
-              : null,
-          child: widget.botAvatar == null
-              ? Text(
-                  widget.botName.isNotEmpty
-                      ? widget.botName[0].toUpperCase()
-                      : 'B',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )
-              : null,
-        ),
-        const SizedBox(width: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withAlpha(10),
-                blurRadius: 4,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: AnimatedBuilder(
-            animation: _controller,
-            builder: (context, child) {
-              return Row(
-                mainAxisSize: MainAxisSize.min,
-                children: List.generate(3, (index) {
-                  final delay = index * 0.33;
-                  final value = (_controller.value + delay) % 1.0;
-                  final scale = 0.5 + (value < 0.5 ? value * 2 : (1 - value) * 2) * 0.5;
-                  
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE53935),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              );
-            },
           ),
         ),
       ],
