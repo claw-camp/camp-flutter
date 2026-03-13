@@ -19,6 +19,8 @@ class ChatService extends ChangeNotifier {
   String? _currentViewingConversationId;
   // App 是否在前台
   bool _isAppInForeground = true;
+  // 🔥 本地已读标记（防止被服务器数据覆盖）
+  Set<String> _localReadConversations = {};
 
   List<Conversation> conversations = [];
   Map<String, List<Message>> messagesMap = {};
@@ -88,6 +90,12 @@ class ChatService extends ChangeNotifier {
   /// 设置 App 前台/后台状态
   void setAppForeground(bool isForeground) {
     _isAppInForeground = isForeground;
+  }
+
+  /// 🔥 刷新当前查看的会话的消息（用于 App 恢复到前台时）
+  Future<void> refreshCurrentConversation() async {
+    if (_currentViewingConversationId == null) return;
+    await loadMessages(_currentViewingConversationId!);
   }
 
   void connectRealtime() {
@@ -426,7 +434,28 @@ class ChatService extends ChangeNotifier {
     loading = true;
     notifyListeners();
     try {
-      conversations = await _api!.getConversations();
+      final serverConversations = await _api!.getConversations();
+      
+      // 🔥 关键修复：保留本地已读状态，不被服务器覆盖
+      conversations = serverConversations.map((conv) {
+        if (_localReadConversations.contains(conv.conversationId)) {
+          // 如果本地已标记为已读，强制未读数为 0
+          if (conv.unreadCount > 0) {
+            return Conversation(
+              id: conv.id,
+              conversationId: conv.conversationId,
+              type: conv.type,
+              name: conv.name,
+              avatar: conv.avatar,
+              unreadCount: 0,
+              lastMessage: conv.lastMessage,
+              lastMessageAt: conv.lastMessageAt,
+              botId: conv.botId,
+            );
+          }
+        }
+        return conv;
+      }).toList();
     } catch (_) {}
     loading = false;
     notifyListeners();
@@ -542,7 +571,7 @@ class ChatService extends ChangeNotifier {
 
   /// 标记会话为已读
   Future<void> markConversationAsRead(String conversationId) async {
-    // 先立即更新本地状态
+    // 🔥 先立即更新本地状态
     final idx = conversations.indexWhere((c) => c.conversationId == conversationId);
     if (idx >= 0 && conversations[idx].unreadCount > 0) {
       conversations[idx] = Conversation(
@@ -556,6 +585,8 @@ class ChatService extends ChangeNotifier {
         lastMessageAt: conversations[idx].lastMessageAt,
         botId: conversations[idx].botId,
       );
+      // 🔥 添加到本地已读集合
+      _localReadConversations.add(conversationId);
       notifyListeners();
     }
 

@@ -62,7 +62,7 @@ class _CampAppState extends State<CampApp> with WidgetsBindingObserver {
         chatService.loadConversations();
         break;
       case AppLifecycleState.paused:
-        // 后台：保持连接，标记为后台状态
+        // 🔥 后台：保持连接，标记为后台状态
         chatService.setAppForeground(false);
         break;
       case AppLifecycleState.detached:

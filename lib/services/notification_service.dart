@@ -1,5 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/foundation.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -29,13 +30,29 @@ class NotificationService {
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
 
+    // 🔥 请求通知权限 (Android 13+)
+    await _requestPermission();
+
     _initialized = true;
     debugPrint('✅ 通知服务已初始化');
   }
 
+  Future<void> _requestPermission() async {
+    final status = await Permission.notification.status;
+    if (status != PermissionStatus.granted) {
+      debugPrint('📱 请求通知权限...');
+      final result = await Permission.notification.request();
+      if (result == PermissionStatus.granted) {
+        debugPrint('✅ 通知权限已授予');
+      } else {
+        debugPrint('⚠️ 通知权限被拒绝');
+      }
+    }
+  }
+
   void _onNotificationTapped(NotificationResponse response) {
-    // TODO: 点击通知跳转到对应聊天
     debugPrint('📱 通知被点击: ${response.payload}');
+    // TODO: 点击通知跳转到对应聊天
   }
 
   Future<void> show({

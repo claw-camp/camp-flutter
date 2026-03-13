@@ -17,7 +17,7 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.clawcamp.camp_flutter"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "28.2.13676358"  // 🔥 使用已安装的 NDK 版本
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

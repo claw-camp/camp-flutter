@@ -34,13 +34,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _loadVersion() async {
     try {
       final info = await PackageInfo.fromPlatform();
-      if (mounted) {
+      if (mounted && info.version.isNotEmpty) {
         setState(() => _currentVersion = info.version);
+      } else {
+        // 使用默认版本
+        if (mounted) {
+          setState(() => _currentVersion = '1.4.6');
+        }
       }
     } catch (e) {
-      // package_info_plus 可能失败，使用默认值
+      debugPrint('PackageInfo 错误: $e');
+      // package_info_plus 失败时使用默认值
       if (mounted) {
-        setState(() => _currentVersion = '1.0.0');
+        setState(() => _currentVersion = '1.4.6');
       }
     }
   }

@@ -25,7 +25,9 @@ class WebSocketService {
     _isConnecting = true;
     _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
 
+    // 🔥 订阅所有消息（不再依赖 watch-conversation）
     _channel!.sink.add(jsonEncode({'type': 'subscribe', 'campKey': campKey}));
+    // 🔥 watch-conversation 仍然发送，用于告诉服务器当前查看的会话
     if (_activeConversationId != null) {
       _channel!.sink.add(jsonEncode({
         'type': 'watch-conversation',
